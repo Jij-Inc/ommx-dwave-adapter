@@ -1,0 +1,2 @@
+class OMMXDWaveAdapterError(Exception):
+    pass
