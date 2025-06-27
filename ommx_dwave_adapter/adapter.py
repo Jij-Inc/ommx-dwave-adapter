@@ -132,9 +132,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> solution = OMMXFixstarsAmplifyAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
-        # return cls.sample(
-        #     ommx_instance, token=token, time_limit=time_limit, label=label
-        # ).best_feasible
         sample = cls.sample(
             ommx_instance, token=token, time_limit=time_limit, label=label
         )
