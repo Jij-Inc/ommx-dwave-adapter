@@ -132,9 +132,20 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> solution = OMMXFixstarsAmplifyAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
-        return cls.sample(
+        # return cls.sample(
+        #     ommx_instance, token=token, time_limit=time_limit, label=label
+        # ).best_feasible
+        sample = cls.sample(
             ommx_instance, token=token, time_limit=time_limit, label=label
-        ).best_feasible()
+        )
+
+        best_feasible = sample.best_feasible
+        if best_feasible is None:
+            raise OMMXDWaveAdapterError(
+                "No feasible solution found. Check the instance."
+            )
+
+        return best_feasible
 
     @property
     def sampler_input(self) -> ConstrainedQuadraticModel:

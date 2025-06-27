@@ -278,14 +278,16 @@ def test_decode():
 
     sampleset = adapter.decode_to_sampleset(dimod_sampleset)
     assert sampleset.raw.sense == Instance.MAXIMIZE
-    best = sampleset.best_feasible()
+    best = sampleset.best_feasible
+    if not best:
+        raise AssertionError("No feasible solution found in sampleset")
     assert best.objective == 41
-    assert best.raw.state.entries[0] == pytest.approx(1)
-    assert best.raw.state.entries[1] == pytest.approx(0)
-    assert best.raw.state.entries[2] == pytest.approx(0)
-    assert best.raw.state.entries[3] == pytest.approx(1)
-    assert best.raw.state.entries[4] == pytest.approx(0)
-    assert best.raw.state.entries[5] == pytest.approx(0)
+    assert best.state.entries[0] == pytest.approx(1)
+    assert best.state.entries[1] == pytest.approx(0)
+    assert best.state.entries[2] == pytest.approx(0)
+    assert best.state.entries[3] == pytest.approx(1)
+    assert best.state.entries[4] == pytest.approx(0)
+    assert best.state.entries[5] == pytest.approx(0)
 
 
 def test_decode_no_constraints():
@@ -308,9 +310,12 @@ def test_decode_no_constraints():
 
     sampleset = adapter.decode_to_sampleset(dimod_sampleset)
     assert sampleset.raw.sense == Instance.MINIMIZE
-    best = sampleset.best_feasible()
+    best = sampleset.best_feasible
+
+    if not best:
+        raise AssertionError("No feasible solution found in sampleset")
     assert best.objective == 3
     assert best.constraints.empty
-    assert best.raw.state.entries[0] == pytest.approx(1)
-    assert best.raw.state.entries[1] == pytest.approx(1)
-    assert best.raw.state.entries[2] == pytest.approx(1)
+    assert best.state.entries[0] == pytest.approx(1)
+    assert best.state.entries[1] == pytest.approx(1)
+    assert best.state.entries[2] == pytest.approx(1)
