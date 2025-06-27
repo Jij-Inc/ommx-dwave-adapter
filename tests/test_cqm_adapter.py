@@ -278,7 +278,7 @@ def test_decode():
 
     sampleset = adapter.decode_to_sampleset(dimod_sampleset)
     assert sampleset.raw.sense == Instance.MAXIMIZE
-    
+
     best = sampleset.best_feasible
     assert best.objective == 41
     assert best.state.entries[0] == pytest.approx(1)
