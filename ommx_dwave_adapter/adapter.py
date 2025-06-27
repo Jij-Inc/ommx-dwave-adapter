@@ -93,7 +93,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return adapter.decode_to_sampleset(dimod_sampleset)
 
     @classmethod
-    def solve(
+    def solve(  # pyright: ignore[reportIncompatibleMethodOverride]
         cls,
         ommx_instance: Instance,
         *,
