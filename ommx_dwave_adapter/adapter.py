@@ -93,13 +93,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return adapter.decode_to_sampleset(dimod_sampleset)
 
     @classmethod
-    def solve(  # pyright: ignore[reportIncompatibleMethodOverride]
+    def solve(
         cls,
         ommx_instance: Instance,
         *,
         token: Optional[str] = None,
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
+        **kwargs,
     ) -> Solution:
         """Solve the given ommx.v1.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.v1.Solution.
