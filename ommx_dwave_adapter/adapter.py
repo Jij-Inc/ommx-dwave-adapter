@@ -100,7 +100,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         token: Optional[str] = None,
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
-        **kwargs,
+        **kwargs, # Super class SamplerAdapter's solve accepts **kwargs
     ) -> Solution:
         """Solve the given ommx.v1.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.v1.Solution.
