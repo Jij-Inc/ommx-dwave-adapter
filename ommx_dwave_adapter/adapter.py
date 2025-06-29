@@ -221,7 +221,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         # Check if objective function is non linear
         if objective.degree() >= 3:
             raise OMMXDWaveAdapterError(
-                "Unsupport objective function type: must be either `constant`, `linear` or `quadratic`."
+                "Unsupported objective function type: must be either `constant`, `linear` or `quadratic`."
             )
 
         expr = self._make_expr(objective)
