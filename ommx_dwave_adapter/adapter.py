@@ -226,14 +226,13 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         expr = self._make_expr(objective)
 
-        # Set objective function
-        self.model.set_objective(expr)
-
         if self.instance.sense == Instance.MAXIMIZE:
             # multiply all coefficients by -1:
             # this takes all except the last element from the tuple and concatenates it
             # with the last element multiplied with -1 to get a new tuple
             expr = [tuple[:-1] + (-1 * tuple[-1],) for tuple in expr]
+
+        # Set objective function
         self.model.set_objective(expr)
 
     def _set_constraints(self):
