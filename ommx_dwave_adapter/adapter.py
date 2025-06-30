@@ -282,11 +282,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Create a dwave expression from an OMMX Function."""
         expr = []
         for ids, coefficient in function.terms.items():
-            # Term with no IDs represents constant term.
-            if len(ids) == 0:
-                expr.append((coefficient,))
-            # Terms with one ID represent linear terms, and terms with two IDs represent quadratic terms.
-            elif len(ids) <= 2:
-                expr.append((*ids, coefficient))
+            expr.append((*id, coefficient))
 
         return expr
