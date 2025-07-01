@@ -312,7 +312,7 @@ def test_decode_no_constraints():
 
     best = sampleset.best_feasible
     assert best.objective == 3
-    assert best.constraints.empty
+    assert len(best.constraints) == 0
     assert best.state.entries[0] == pytest.approx(1)
     assert best.state.entries[1] == pytest.approx(1)
     assert best.state.entries[2] == pytest.approx(1)
