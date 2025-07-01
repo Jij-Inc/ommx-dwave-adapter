@@ -100,7 +100,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         token: Optional[str] = None,
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
-        **kwargs,  # Super class SamplerAdapter's solve accepts **kwargs
     ) -> Solution:
         """Solve the given ommx.v1.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.v1.Solution.
@@ -141,6 +140,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def sampler_input(self) -> ConstrainedQuadraticModel:
         """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
         return self.model
+
+    @property
+    def solver_input(self) -> ConstrainedQuadraticModel:
+        """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
+        return self.sampler_input
 
     def decode_to_sampleset(self, data: dimod.SampleSet) -> SampleSet:
         """Convert a dimod.SampleSet model matching this instance to an ommx.v1.SampleSet.
@@ -190,6 +194,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             for i, sample in enumerate(data.record.sample)
         }
         return self.instance.evaluate_samples(samples)
+
+    def decode(self, data: dimod.SampleSet) -> Solution:
+        """Convert a dimod.SampleSet model matching this instance to an ommx.v1.Solution."""
+        sample_set = self.decode_to_sampleset(data)
+        return sample_set.best_feasible
 
     def _set_decision_variables(self):
         for var in self.instance.decision_variables:
