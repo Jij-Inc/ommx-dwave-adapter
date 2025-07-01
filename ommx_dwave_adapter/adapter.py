@@ -144,7 +144,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     @property
     def solver_input(self) -> ConstrainedQuadraticModel:
         """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
-        return self.sampler_input
+        return self.model
 
     def decode_to_sampleset(self, data: dimod.SampleSet) -> SampleSet:
         """Convert a dimod.SampleSet model matching this instance to an ommx.v1.SampleSet.
