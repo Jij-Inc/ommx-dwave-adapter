@@ -1,7 +1,12 @@
 from ommx.adapter import SamplerAdapter
-from ommx.v1 import Instance, SampleSet, Solution, DecisionVariable, Constraint
-from ommx.v1.linear_pb2 import Linear
-from ommx.v1.quadratic_pb2 import Quadratic
+from ommx.v1 import (
+    Instance,
+    DecisionVariable,
+    Constraint,
+    Function,
+    Solution,
+    SampleSet,
+)
 
 import math
 import dimod
@@ -10,6 +15,8 @@ from dwave.system import LeapHybridCQMSampler
 from typing import Optional
 
 from .exception import OMMXDWaveAdapterError
+
+ABSOLUTE_TOLERANCE = 1e-6
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
@@ -127,10 +134,15 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """
         return cls.sample(
             ommx_instance, token=token, time_limit=time_limit, label=label
-        ).best_feasible()
+        ).best_feasible
 
     @property
     def sampler_input(self) -> ConstrainedQuadraticModel:
+        """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
+        return self.model
+
+    @property
+    def solver_input(self) -> ConstrainedQuadraticModel:
         """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
         return self.model
 
@@ -183,8 +195,13 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         }
         return self.instance.evaluate_samples(samples)
 
+    def decode(self, data: dimod.SampleSet) -> Solution:
+        """Convert a dimod.SampleSet model matching this instance to an ommx.v1.Solution."""
+        sample_set = self.decode_to_sampleset(data)
+        return sample_set.best_feasible
+
     def _set_decision_variables(self):
-        for var in self.instance.raw.decision_variables:
+        for var in self.instance.decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 self.model.add_variable("BINARY", var.id)
             elif var.kind == DecisionVariable.INTEGER:
@@ -208,56 +225,52 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 )
 
     def _set_objective(self):
-        objective = self.instance.raw.objective
+        objective = self.instance.objective
 
-        if objective.HasField("constant"):
-            self.model.set_objective([(objective.constant,)])
-            return
-        elif objective.HasField("linear"):
-            expr = self._make_linear_expr(objective.linear)
-            self.model.set_objective(expr)
-        elif objective.HasField("quadratic"):
-            expr = self._make_quadratic_expr(objective.quadratic)
-            self.model.set_objective(expr)
-        else:
+        # Check if objective function is non linear
+        if objective.degree() >= 3:
             raise OMMXDWaveAdapterError(
-                f"Unsupport objective function type: must be either `constant`, `linear` or `quadratic`."
-                f"type: {objective.WhichOneof('function')}"
+                "Unsupported objective function type: must be either `constant`, `linear` or `quadratic`."
             )
 
-        if self.instance.raw.sense == Instance.MAXIMIZE:
+        expr = self._make_expr(objective)
+
+        if self.instance.sense == Instance.MAXIMIZE:
             # multiply all coefficients by -1:
             # this takes all except the last element from the tuple and concatenates it
             # with the last element multiplied with -1 to get a new tuple
             expr = [tuple[:-1] + (-1 * tuple[-1],) for tuple in expr]
+
+        # Set objective function
         self.model.set_objective(expr)
 
     def _set_constraints(self):
-        for constraint in self.instance.raw.constraints:
-            if constraint.function.HasField("linear"):
-                expr = self._make_linear_expr(constraint.function.linear)
-            elif constraint.function.HasField("quadratic"):
-                expr = self._make_quadratic_expr(constraint.function.quadratic)
-            elif constraint.function.HasField("constant"):
+        for constraint in self.instance.constraints:
+            # Check if the constraints is non linear
+            if constraint.function.degree() >= 3:
+                raise OMMXDWaveAdapterError(
+                    f"Constraints must be either `constant`, `linear` or `quadratic`."
+                    f"id: {constraint.id}, "
+                )
+
+            # Only constant case
+            if constraint.function.degree() == 0:
                 if constraint.equality == Constraint.EQUAL_TO_ZERO and math.isclose(
-                    constraint.function.constant, 0, abs_tol=1e-6
+                    constraint.function.constant_term, 0, abs_tol=ABSOLUTE_TOLERANCE
                 ):
                     continue
                 elif (
                     constraint.equality == Constraint.LESS_THAN_OR_EQUAL_TO_ZERO
-                    and constraint.function.constant <= 1e-6
+                    and constraint.function.constant_term <= ABSOLUTE_TOLERANCE
                 ):
                     continue
                 else:
                     raise OMMXDWaveAdapterError(
                         f"Infeasible constant constraint was found: id {constraint.id}"
                     )
-            else:
-                raise OMMXDWaveAdapterError(
-                    f"Constraints must be either `constant`, `linear` or `quadratic`."
-                    f"id: {constraint.id}, "
-                    f"type: {constraint.function.WhichOneof('function')}"
-                )
+
+            # Create dwave expression for the constraint
+            expr = self._make_expr(constraint.function)
 
             if constraint.equality == Constraint.EQUAL_TO_ZERO:
                 constr_sense = "=="
@@ -274,16 +287,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 expr, constr_sense, label=constraint.id
             )
 
-    def _make_linear_expr(self, linear: Linear):
-        # we transform our expression into a list of tuples.
-        # Each tuple is all the variable IDs used in a term, followed by the coefficient of that term.
-        tuples = [(term.id, term.coefficient) for term in linear.terms]
-        return tuples + [(linear.constant,)]
+    def _make_expr(self, function: Function):
+        """Create a dwave expression from an OMMX Function."""
+        expr = []
+        for ids, coefficient in function.terms.items():
+            expr.append((*ids, coefficient))
 
-    def _make_quadratic_expr(self, quad: Quadratic):
-        quad_tuples = [
-            (row, column, value)
-            for row, column, value in zip(quad.rows, quad.columns, quad.values)
-        ]
-        linear_tuples = [(term.id, term.coefficient) for term in quad.linear.terms]
-        return quad_tuples + linear_tuples + [(quad.linear.constant,)]
+        return expr
