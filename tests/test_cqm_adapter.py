@@ -277,7 +277,7 @@ def test_decode():
     dimod_sampleset.resolve()
 
     sampleset = adapter.decode_to_sampleset(dimod_sampleset)
-    assert sampleset.raw.sense == Instance.MAXIMIZE
+    assert sampleset.sense == Instance.MAXIMIZE
 
     best = sampleset.best_feasible
     assert best.objective == 41
@@ -308,7 +308,7 @@ def test_decode_no_constraints():
     dimod_sampleset.resolve()
 
     sampleset = adapter.decode_to_sampleset(dimod_sampleset)
-    assert sampleset.raw.sense == Instance.MINIMIZE
+    assert sampleset.sense == Instance.MINIMIZE
 
     best = sampleset.best_feasible
     assert best.objective == 3
