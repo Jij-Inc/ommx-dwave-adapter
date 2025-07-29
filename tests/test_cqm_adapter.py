@@ -317,6 +317,7 @@ def test_decode_no_constraints():
     assert best.state.entries[1] == pytest.approx(1)
     assert best.state.entries[2] == pytest.approx(1)
 
+
 def test_partial_evaluate():
     x = [DecisionVariable.binary(i, name="x", subscripts=[i]) for i in range(3)]
     instance = Instance.from_components(
@@ -332,7 +333,7 @@ def test_partial_evaluate():
 
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
-    
+
     # After partial evaluation with {0: 1}, only variables 1 and 2 should remain
     assert list(cqm.variables) == [1, 2]
     assert len(cqm.variables) == 2
