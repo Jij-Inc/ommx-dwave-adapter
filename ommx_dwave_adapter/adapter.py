@@ -201,7 +201,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return sample_set.best_feasible
 
     def _set_decision_variables(self):
-        for var in self.instance.decision_variables:
+        for var in self.instance.used_decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 self.model.add_variable("BINARY", var.id)
             elif var.kind == DecisionVariable.INTEGER:
