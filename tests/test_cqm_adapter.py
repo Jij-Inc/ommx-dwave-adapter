@@ -368,7 +368,5 @@ def test_relax_constraint():
     cqm = adapter.sampler_input
     # After relaxing constraint 1, x[2] is irrelevant and not included in CQM
     assert list(cqm.variables) == [0, 1]
-    assert len(cqm.variables) == 2
-    assert 2 not in cqm.variables
     # The relaxed constraint should not be present in the model
     assert len(cqm.constraints) == 1
