@@ -336,8 +336,6 @@ def test_partial_evaluate():
 
     # After partial evaluation with {0: 1}, only variables 1 and 2 should remain
     assert list(cqm.variables) == [1, 2]
-    assert len(cqm.variables) == 2
-    assert 0 not in cqm.variables
 
     # Test partial evaluation with x[1] = 1
     partial = instance.partial_evaluate({1: 1})
