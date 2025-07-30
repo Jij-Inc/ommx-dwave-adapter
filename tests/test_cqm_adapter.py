@@ -334,20 +334,39 @@ def test_partial_evaluate():
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
 
-    # After partial evaluation with {0: 1}, only variables 1 and 2 should remain
-    assert list(cqm.variables) == [1, 2]
+    expected = dimod.ConstrainedQuadraticModel()
+    dimod_x1 = dimod.Binary(1)
+    dimod_x2 = dimod.Binary(2)
+    expected.set_objective(dimod_x1 + dimod_x2 + 1)
+    expected.add_constraint(dimod_x1 + dimod_x2 <= 0, label=0)
+
+    assert cqm.is_equal(expected)
 
     # Test partial evaluation with x[1] = 1
     partial = instance.partial_evaluate({1: 1})
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
-    assert list(cqm.variables) == [0, 2]
+
+    expected = dimod.ConstrainedQuadraticModel()
+    dimod_x0 = dimod.Binary(0)
+    dimod_x2 = dimod.Binary(2)
+    expected.set_objective(dimod_x0 + dimod_x2 + 1)
+    expected.add_constraint(dimod_x0 + dimod_x2 <= 0, label=0)
+
+    assert cqm.is_equal(expected)
 
     # Test partial evaluation with x[2] = 1
     partial = instance.partial_evaluate({2: 1})
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
-    assert list(cqm.variables) == [0, 1]
+
+    expected = dimod.ConstrainedQuadraticModel()
+    dimod_x0 = dimod.Binary(0)
+    dimod_x1 = dimod.Binary(1)
+    expected.set_objective(dimod_x0 + dimod_x1 + 1)
+    expected.add_constraint(dimod_x0 + dimod_x1 <= 0, label=0)
+
+    assert cqm.is_equal(expected)
 
 
 def test_relax_constraint():
@@ -366,7 +385,12 @@ def test_relax_constraint():
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     cqm = adapter.sampler_input
-    # After relaxing constraint 1, x[2] is irrelevant and not included in CQM
-    assert list(cqm.variables) == [0, 1]
-    # The relaxed constraint should not be present in the model
-    assert len(cqm.constraints) == 1
+
+    # Create expected model after relaxing constraint 1
+    expected = dimod.ConstrainedQuadraticModel()
+    dimod_x0 = dimod.Binary(0)
+    dimod_x1 = dimod.Binary(1)
+    expected.set_objective(dimod_x0 + dimod_x1)
+    expected.add_constraint(dimod_x0 + 2 * dimod_x1 - 1 <= 0, label=0)
+
+    assert cqm.is_equal(expected)
