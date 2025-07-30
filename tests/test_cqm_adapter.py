@@ -342,8 +342,6 @@ def test_partial_evaluate():
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
     assert list(cqm.variables) == [0, 2]
-    assert len(cqm.variables) == 2
-    assert 1 not in cqm.variables
 
     # Test partial evaluation with x[2] = 1
     partial = instance.partial_evaluate({2: 1})
