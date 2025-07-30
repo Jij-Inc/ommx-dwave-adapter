@@ -348,8 +348,6 @@ def test_partial_evaluate():
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
     assert list(cqm.variables) == [0, 1]
-    assert len(cqm.variables) == 2
-    assert 2 not in cqm.variables
 
 
 def test_relax_constraint():
