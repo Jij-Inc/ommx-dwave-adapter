@@ -29,7 +29,7 @@ ommx_instance = Instance.from_components(
 # Create `ommx.v1.SampleSet` through `diwave.system.LeapHybridCQMSampler`
 # Your Leap token can be set through configuration file, environment variable,
 # or passed with a `token` parameter.
-ommx_sampleset = OMMLeapHybridCQMAdapter.sample(ommx_instance)
+ommx_sampleset = OMMXLeapHybridCQMAdapter.sample(ommx_instance)
 
 print(ommx_sampleset)
 ```

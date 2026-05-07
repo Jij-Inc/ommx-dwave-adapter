@@ -69,7 +69,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             ...     sense=Instance.MINIMIZE,
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
-            >>> solution = OMMXFixstarsAmplifyAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
+            >>> solution = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
         """
         # Dwave appears to be able to read configuration from a config file
         # automatically, and this apparently includes the token. Users may want
@@ -130,7 +130,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             ...     sense=Instance.MINIMIZE,
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
-            >>> solution = OMMXFixstarsAmplifyAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
+            >>> solution = OMMXLeapHybridCQMAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
         return cls.sample(
             ommx_instance, token=token, time_limit=time_limit, label=label
