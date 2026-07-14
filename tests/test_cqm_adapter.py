@@ -21,11 +21,11 @@ def test_instance_to_cqm_model():
         )
         for i in range(N)
     ]
-    constraints = [(Function(sum(w[i] * x[i] for i in range(N))) <= W).set_id(0)]
+    constraints = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints=constraints,
+        constraints={0: constraints},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -46,41 +46,24 @@ def test_instance_to_cqm_model():
 
 def test_error_on_unsupported_function():
     decision_variables = [
-        DecisionVariable.of_type(
-            kind=DecisionVariable.BINARY, id=0, lower=0, upper=1, name="x"
+        DecisionVariable.binary(
+            id=0,
+            name="x",
         ),
-        DecisionVariable.of_type(
-            kind=DecisionVariable.INTEGER,
-            id=1,
-            lower=-20.0,
-            upper=20.0,
-            name="y",
-            subscripts=[],
+        DecisionVariable.integer(id=1, name="y", lower=-20, upper=20),
+        DecisionVariable.continuous(
+            id=2, name="z", lower=-30, upper=30, subscripts=[0]
         ),
-        DecisionVariable.of_type(
-            kind=DecisionVariable.CONTINUOUS,
-            id=2,
-            lower=-30,
-            upper=30,
-            name="z",
-            subscripts=[0],
-        ),
-        DecisionVariable.of_type(
-            kind=DecisionVariable.CONTINUOUS,
-            id=3,
-            # TODO dwave doesn't accept -inf, +inf. how to handle this? should the adapter convert?
-            lower=float("-1e30"),
-            upper=float("1e30"),
-            name="w",
-            subscripts=[1, 2],
-        ),
+        DecisionVariable.continuous(
+            id=3, name="w", lower=float("-1e30"), upper=float("1e30"), subscripts=[1, 2]
+        ),  # TODO dwave doesn't accept -inf, +inf. how to handle this? should the adapter convert?
     ]
     objective = Polynomial(terms={(0, 1, 2): 2.0, (1, 2): 3.0, (2,): 4.0, (): 5.0})
 
     instance = Instance.from_components(
         decision_variables=decision_variables,
         objective=objective,
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
     with pytest.raises(OMMXDWaveAdapterError):
@@ -92,7 +75,7 @@ def test_error_on_unsupported_function():
     instance = Instance.from_components(
         decision_variables=decision_variables,
         objective=objective,
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
     with pytest.raises(OMMXDWaveAdapterError):
@@ -106,7 +89,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -122,7 +105,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -140,7 +123,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -158,16 +141,14 @@ def test_encode_multi_variable_types():
     y = DecisionVariable.binary(id=1, name="y")
     z = DecisionVariable.integer(id=2, name="z", lower=1, upper=10)
     A = 2
-    # we have to explicitly set the ids (& the dimod label)
-    # so dimod matches the constraint with the expected model,
-    # as the id OMMX seems to set automatically seems to depend
-    # on _all_ constraints being made across all tests (and thus
-    # is unstable if we ever change things)
-    constraints = [(x + z >= A).set_id(0), (z == 2).set_id(1)]
+    # Constraint IDs are owned by the Instance and specified as dictionary keys.
+    # Keep them aligned with the dimod labels in the expected model below.
+    constraint_1 = x + z >= A
+    constraint_2 = z == 2
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x + y * z,
-        constraints=constraints,
+        constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MINIMIZE,
     )
 
@@ -200,11 +181,12 @@ def test_encode_maximize():
     z = DecisionVariable.integer(id=2, name="z", lower=1, upper=10)
     A = 2
 
-    constraints = [(x + z >= A).set_id(0), (z == 2).set_id(1)]
+    constraint_1 = x + z >= A
+    constraint_2 = z == 2
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x + y * z,
-        constraints=constraints,
+        constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MAXIMIZE,
     )
 
@@ -227,11 +209,11 @@ def test_encode_quadratic():
     y = DecisionVariable.integer(id=1, name="y", lower=10, upper=20)
     z = DecisionVariable.integer(id=2, name="z", lower=10, upper=20)
 
-    constraints = [(x + y * z >= 10).set_id(0)]
+    constraints = x + y * z >= 10
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x * y + z,
-        constraints=constraints,
+        constraints={0: constraints},
         sense=Instance.MINIMIZE,
     )
 
@@ -262,11 +244,11 @@ def test_decode():
         )
         for i in range(N)
     ]
-    constraints = [Function(sum(w[i] * x[i] for i in range(N))) <= W]
+    constraints = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints=constraints,
+        constraints={0: constraints},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -297,7 +279,7 @@ def test_decode_no_constraints():
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(x[i] for i in range(3)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -323,7 +305,7 @@ def test_partial_evaluate():
     instance = Instance.from_components(
         decision_variables=x,
         objective=x[0] + x[1] + x[2],
-        constraints=[(x[0] + x[1] + x[2] <= 1).set_id(0)],
+        constraints={0: x[0] + x[1] + x[2] <= 1},
         sense=Instance.MINIMIZE,
     )
     assert instance.used_decision_variables == x
@@ -374,14 +356,14 @@ def test_relax_constraint():
     instance = Instance.from_components(
         decision_variables=x,
         objective=x[0] + x[1],
-        constraints=[(x[0] + 2 * x[1] <= 1).set_id(0), (x[1] + x[2] <= 1).set_id(1)],
+        constraints={0: x[0] + 2 * x[1] <= 1, 1: x[1] + x[2] <= 1},
         sense=Instance.MINIMIZE,
     )
 
     assert instance.used_decision_variables == x
     instance.relax_constraint(1, "relax")
     # id for x[2] is listed as irrelevant
-    assert instance.decision_variable_analysis().irrelevant() == {x[2].id}
+    assert instance.irrelevant_decision_variable_ids() == {x[2].id}
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     cqm = adapter.sampler_input

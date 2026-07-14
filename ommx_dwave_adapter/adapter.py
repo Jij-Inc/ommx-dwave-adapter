@@ -65,7 +65,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> ommx_instance = Instance.from_components(
             ...     decision_variables=[x1],
             ...     objective=x1,
-            ...     constraints=[],
+            ...     constraints={},
             ...     sense=Instance.MINIMIZE,
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
@@ -126,7 +126,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> ommx_instance = Instance.from_components(
             ...     decision_variables=[x1],
             ...     objective=x1,
-            ...     constraints=[],
+            ...     constraints={},
             ...     sense=Instance.MINIMIZE,
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
@@ -171,7 +171,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> ommx_instance = Instance.from_components(
             ...     decision_variables=[x1],
             ...     objective=x1,
-            ...     constraints=[],
+            ...     constraints={},
             ...     sense=Instance.MINIMIZE,
             ... )
             >>>
@@ -245,12 +245,12 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.model.set_objective(expr)
 
     def _set_constraints(self):
-        for constraint in self.instance.constraints:
+        for constraint_id, constraint in self.instance.constraints.items():
             # Check if the constraints is non linear
             if constraint.function.degree() >= 3:
                 raise OMMXDWaveAdapterError(
                     f"Constraints must be either `constant`, `linear` or `quadratic`."
-                    f"id: {constraint.id}, "
+                    f"id: {constraint_id}, "
                 )
 
             # Only constant case
@@ -266,7 +266,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                     continue
                 else:
                     raise OMMXDWaveAdapterError(
-                        f"Infeasible constant constraint was found: id {constraint.id}"
+                        f"Infeasible constant constraint was found: id {constraint_id}"
                     )
 
             # Create dwave expression for the constraint
@@ -279,12 +279,12 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             else:
                 raise OMMXDWaveAdapterError(
                     f"Unsupported constraint equality: "
-                    f"id: {constraint.id}, equality: {constraint.equality}"
+                    f"id: {constraint_id}, equality: {constraint.equality}"
                 )
 
             # rhs is assumed 0 by dwave
             self.model.add_constraint_from_iterable(
-                expr, constr_sense, label=constraint.id
+                expr, constr_sense, label=constraint_id
             )
 
     def _make_expr(self, function: Function):
