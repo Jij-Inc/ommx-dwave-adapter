@@ -1,4 +1,4 @@
-from ommx.v1 import Instance, DecisionVariable, Polynomial, Function
+from ommx import Instance, DecisionVariable, Polynomial, Function
 from dimod.sym import Sense
 import dimod
 import pytest

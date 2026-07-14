@@ -1,5 +1,5 @@
 from ommx.adapter import SamplerAdapter
-from ommx.v1 import (
+from ommx import (
     Instance,
     DecisionVariable,
     Constraint,
@@ -22,7 +22,7 @@ ABSOLUTE_TOLERANCE = 1e-6
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def __init__(self, ommx_instance: Instance):
         """
-        :param ommx_instance: The ommx.v1.Instance to sample.
+        :param ommx_instance: The ommx.Instance to sample.
         """
         self.instance = ommx_instance
         self.model = ConstrainedQuadraticModel()
@@ -40,14 +40,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
     ) -> SampleSet:
-        """Solve the given ommx.v1.Instance using dwave's LeapHybridCQMSampler,
-        returning the samples as an ommx.v1.SampleSet.
+        """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
+        returning the samples as an ommx.SampleSet.
 
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
           more info.
 
-        :param ommx_instance: The ommx.v1.Instance to solve.
+        :param ommx_instance: The ommx.Instance to solve.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
@@ -59,7 +59,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx.v1 import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable, Linear
             >>>
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -101,14 +101,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
     ) -> Solution:
-        """Solve the given ommx.v1.Instance using dwave's LeapHybridCQMSampler,
-        returning the best feasible solution as an ommx.v1.Solution.
+        """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
+        returning the best feasible solution as an ommx.Solution.
 
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
           more info.
 
-        :param ommx_instance: The ommx.v1.Instance to solve.
+        :param ommx_instance: The ommx.Instance to solve.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
@@ -120,7 +120,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx.v1 import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable, Linear
             >>>
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -147,7 +147,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return self.model
 
     def decode_to_sampleset(self, data: dimod.SampleSet) -> SampleSet:
-        """Convert a dimod.SampleSet model matching this instance to an ommx.v1.SampleSet.
+        """Convert a dimod.SampleSet model matching this instance to an ommx.SampleSet.
 
         This method is intended to be used if the model has been acquired with
         `sampler_input` for futher adjustment of the sampler parameters, and
@@ -165,7 +165,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx.v1 import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable, Linear
             >>> from dwave.system import LeapHybridCQMSampler
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -196,7 +196,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return self.instance.evaluate_samples(samples)
 
     def decode(self, data: dimod.SampleSet) -> Solution:
-        """Convert a dimod.SampleSet model matching this instance to an ommx.v1.Solution."""
+        """Convert a dimod.SampleSet model matching this instance to an ommx.Solution."""
         sample_set = self.decode_to_sampleset(data)
         return sample_set.best_feasible
 
