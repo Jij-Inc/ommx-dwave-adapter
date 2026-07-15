@@ -6,6 +6,7 @@ from ommx import (
     Function,
     Solution,
     SampleSet,
+    AdditionalCapability,
 )
 
 import math
@@ -20,10 +21,14 @@ ABSOLUTE_TOLERANCE = 1e-6
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
+    ADDITIONAL_CAPABILITIES = frozenset({AdditionalCapability.OneHot})
+
     def __init__(self, ommx_instance: Instance):
         """
         :param ommx_instance: The ommx.Instance to sample.
         """
+        super().__init__(ommx_instance)
+
         self.instance = ommx_instance
         self.model = ConstrainedQuadraticModel()
 
