@@ -155,7 +155,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Convert a dimod.SampleSet model matching this instance to an ommx.SampleSet.
 
         This method is intended to be used if the model has been acquired with
-        `sampler_input` for futher adjustment of the sampler parameters, and
+        `sampler_input` for further adjustment of the sampler parameters, and
         separately optimizing the model.
 
         Note that alterations to the model may make the decoding process
@@ -250,6 +250,26 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.model.set_objective(expr)
 
     def _set_constraints(self):
+        # Handle OneHot constraints (first-class constraint type)
+        one_hot_variable_ids = set()
+        for constraint_id, constraint in self.instance.one_hot_constraints.items():
+            overlapping_variable_ids = one_hot_variable_ids.intersection(
+                constraint.variables
+            )
+            # D-Wave does not allow variables to overlap between one-hot constraints.
+            if overlapping_variable_ids:
+                raise OMMXDWaveAdapterError(
+                    "Variables in one-hot constraints must not overlap. "
+                    f"constraint id: {constraint_id}, "
+                    f"variable ids: {sorted(overlapping_variable_ids)}"
+                )
+
+            self.model.add_discrete_from_iterable(
+                constraint.variables,
+                label=f"onehot_{constraint_id}",
+            )
+            one_hot_variable_ids.update(constraint.variables)
+
         for constraint_id, constraint in self.instance.constraints.items():
             # Check if the constraints is non linear
             if constraint.function.degree() >= 3:

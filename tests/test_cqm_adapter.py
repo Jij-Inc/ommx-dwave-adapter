@@ -1,4 +1,4 @@
-from ommx import Instance, DecisionVariable, Polynomial, Function
+from ommx import Instance, DecisionVariable, Polynomial, Function, OneHotConstraint
 from dimod.sym import Sense
 import dimod
 import pytest
@@ -376,3 +376,67 @@ def test_relax_constraint():
     expected.add_constraint(dimod_x0 + 2 * dimod_x1 - 1 <= 0, label=0)
 
     assert cqm.is_equal(expected)
+
+
+def test_encode_one_hot_constraint():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={0: OneHotConstraint(variables=[0, 1, 2])},
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert list(model.variables) == [0, 1, 2]
+    assert model.objective.linear == {}
+    assert model.objective.quadratic == {}
+    assert model.objective.offset == 0
+
+    label = "onehot_0"
+    assert label in model.constraints
+    assert label in model.discrete
+    assert model.constraints[label].sense == Sense.Eq
+    assert model.constraints[label].lhs.linear == {0: 1, 1: 1, 2: 1}
+    assert model.constraints[label].rhs == 1
+
+
+def test_regular_and_one_hot_constraint_do_not_conflict():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={0: x[0] + x[1] <= 1},
+        one_hot_constraints={0: OneHotConstraint(variables=[0, 1, 2])},
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert 0 in model.constraints
+    assert "onehot_0" in model.constraints
+    assert 0 not in model.discrete
+    assert "onehot_0" in model.discrete
+
+
+def test_error_on_overlapping_one_hot_constraints():
+    """Overlapping variables in one-hot constraints must raise an error."""
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[0, 1]),
+            1: OneHotConstraint(variables=[1, 2]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+
+    with pytest.raises(
+        OMMXDWaveAdapterError,
+        match="Variables in one-hot constraints must not overlap",
+    ):
+        OMMXLeapHybridCQMAdapter(instance)
