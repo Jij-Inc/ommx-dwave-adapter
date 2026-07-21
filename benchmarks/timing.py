@@ -23,15 +23,14 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeat", type=int, default=20)
-    parser.add_argument("--solver-time-limit", type=float, default=5.0)
     args = parser.parse_args()
 
     print(
         "operation,instance,formulation,size,first_seconds,median_seconds,"
-        "ommx_version,dwave_system_version,adapter_version"
+        "ommx_version,dimod_version,dwave_system_version,adapter_version"
     )
     instance = build_instance(args.instance, args.size, args.seed, args.formulation)
-    target = prepare_target(args.operation, instance, args.solver_time_limit)
+    target = prepare_target(args.operation, instance, args.instance, args.size)
 
     gc_was_enabled = gc.isenabled()
     gc.disable()
