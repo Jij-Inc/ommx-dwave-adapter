@@ -1,4 +1,4 @@
-from ommx.adapter import SamplerAdapter
+from ommx.adapter import DiagnosticsSink, SamplerAdapter
 from ommx import (
     Instance,
     DecisionVariable,
@@ -44,6 +44,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         token: Optional[str] = None,
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
+        diagnostics: DiagnosticsSink | None = None,
     ) -> SampleSet:
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the samples as an ommx.SampleSet.
@@ -105,6 +106,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         token: Optional[str] = None,
         time_limit: Optional[int] = None,
         label: Optional[str] = None,
+        diagnostics: DiagnosticsSink | None = None,
     ) -> Solution:
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.Solution.
@@ -138,7 +140,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> solution = OMMXLeapHybridCQMAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
         return cls.sample(
-            ommx_instance, token=token, time_limit=time_limit, label=label
+            ommx_instance,
+            token=token,
+            time_limit=time_limit,
+            label=label,
+            diagnostics=diagnostics,
         ).best_feasible
 
     @property
