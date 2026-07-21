@@ -10,10 +10,9 @@ authors = [
     { name = "Jij Inc.", email = "info@j-ij.com" }
 ]
 readme = "README.md"
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 classifiers = [
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -21,7 +20,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "ommx>=2.0.3,<3.0.0",
+    # Latest release in the OMMX v2 series
+    "ommx==2.6.1",
     "dwave-system>=1.29.1",
 ]
 
@@ -35,6 +35,10 @@ dev = [
     "sphinx_fontawesome",
     "sphinx_rtd_theme",
 ]
+
+[tool.setuptools.packages.find]
+include = ["ommx_dwave_adapter*"]
+namespaces = false
 
 [tool.setuptools_scm]
 version_file = "ommx_dwave_adapter/_version.py"
