@@ -39,12 +39,12 @@ D-Waveのdiscrete制約は変数の重複を許可しないため、各OneHotグ
 ## 測定対象
 
 `instance-to-model` はAdapterの生成だけを測定します。
-`result-to-solution` はD-Waveでの求解を測定外で一度行い、`adapter.decode(result)`だけを測定します。
+`result-to-solution` は決定的な実行可能解からローカルでdimod SampleSetを測定外に生成し、
+`adapter.decode(sampleset)`だけを測定します。
 時間測定では、プロセス内でウォームアップ前の初回実行時間と、ウォームアップ後20回の中央値を記録します。
 メモリ測定では、ウォームアップ前の初回実行と、その実行をウォームアップとした2回目のピークメモリを記録します。
 時間計測中はGCを停止します。
-求解準備で使用するsolver time limitは既定値の5秒です。
-D-Waveがモデルに対して要求する最小値がこれを上回る場合は、自動的に最小値まで引き上げます。
+クラウドsolverは使用しないため、D-Wave Leapのtokenは不要です。
 
 ## 処理時間
 
@@ -63,10 +63,7 @@ for size in 10 20 30; do
 done
 ```
 
-`Result -> Solution` の測定にはD-Wave Leapのtokenが必要です。
-
 ```console
-export DWAVE_API_TOKEN=YOUR_TOKEN
 for size in 10 20 30; do
   uv run --frozen python benchmarks/timing.py result-to-solution \
     --instance one-hot --formulation regular --size "$size" \

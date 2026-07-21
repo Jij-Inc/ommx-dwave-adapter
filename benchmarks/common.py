@@ -2,7 +2,7 @@ from collections.abc import Callable
 from importlib.metadata import version
 from typing import Any
 
-from dwave.system import LeapHybridCQMSampler
+import dimod
 from ommx.v1 import Instance
 
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
@@ -39,6 +39,7 @@ FORMULATIONS = ("regular", "one-hot")
 
 PACKAGE_VERSIONS = (
     version("ommx"),
+    version("dimod"),
     version("dwave-system"),
     version("ommx_dwave_adapter"),
 )
@@ -49,8 +50,30 @@ def build_instance(name: str, size: int, seed: int, formulation: str) -> Instanc
     return INSTANCE_BUILDERS[name](size, seed, formulation)
 
 
+def _build_feasible_sample(
+    name: str, size: int, model: dimod.ConstrainedQuadraticModel
+) -> dict[int, float]:
+    """Build a deterministic feasible sample for a benchmark model."""
+    sample = {variable: 0.0 for variable in model.variables}
+
+    if name == "blending":
+        sample.update({variable: 1.0 for variable in model.variables})
+    elif name == "one-hot":
+        sample.update({group * size: 1.0 for group in range(size)})
+    elif name in ("assignment", "tsp"):
+        sample.update({index * size + index: 1.0 for index in range(size)})
+    elif name == "unit-commitment":
+        sample.update({generator: 1.0 for generator in range(size)})
+        sample.update({size + generator: 5.0 for generator in range(size)})
+    elif name == "clique":
+        clique_size = (size + 1) // 2
+        sample.update({vertex: 1.0 for vertex in range(size - clique_size, size)})
+
+    return sample
+
+
 def prepare_target(
-    operation: str, instance: Instance, solver_time_limit: float
+    operation: str, instance: Instance, name: str, size: int
 ) -> Callable[[], Any]:
     """Prepare everything outside the measured operation."""
     if operation == "instance-to-model":
@@ -58,8 +81,6 @@ def prepare_target(
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     model = adapter.solver_input
-    sampler = LeapHybridCQMSampler()
-    time_limit = max(solver_time_limit, sampler.min_time_limit(model))
-    result = sampler.sample_cqm(model, time_limit=time_limit)
-    result.resolve()
-    return lambda: adapter.decode(result)
+    sample = _build_feasible_sample(name, size, model)
+    sampleset = dimod.SampleSet.from_samples_cqm(sample, model)
+    return lambda: adapter.decode(sampleset)

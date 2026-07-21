@@ -21,7 +21,6 @@ def main() -> None:
     parser.add_argument("--formulation", choices=FORMULATIONS, default="regular")
     parser.add_argument("--size", required=True, type=int)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--solver-time-limit", type=float, default=5.0)
     args = parser.parse_args()
 
     try:
@@ -30,7 +29,7 @@ def main() -> None:
         raise SystemExit("Run with `uv run --frozen --with memray`.") from error
 
     instance = build_instance(args.instance, args.size, args.seed, args.formulation)
-    target = prepare_target(args.operation, instance, args.solver_time_limit)
+    target = prepare_target(args.operation, instance, args.instance, args.size)
 
     gc.collect()
     with TemporaryDirectory() as directory:
@@ -53,7 +52,8 @@ def main() -> None:
 
     print(
         "operation,instance,formulation,size,first_peak_memory_bytes,"
-        "peak_memory_bytes,ommx_version,dwave_system_version,adapter_version"
+        "peak_memory_bytes,ommx_version,dimod_version,dwave_system_version,"
+        "adapter_version"
     )
     print(
         args.operation,
