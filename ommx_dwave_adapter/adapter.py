@@ -280,7 +280,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             # Check if the constraints is non linear
             if constraint.function.degree() >= 3:
                 raise OMMXDWaveAdapterError(
-                    f"Constraints must be either `constant`, `linear` or `quadratic`."
+                    f"Constraints must be either `constant`, `linear` or `quadratic`. "
                     f"id: {constraint_id}, "
                 )
 
