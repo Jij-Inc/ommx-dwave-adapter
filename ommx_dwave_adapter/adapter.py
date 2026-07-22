@@ -273,6 +273,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             self.model.add_discrete_from_iterable(
                 constraint.variables,
                 label=f"onehot_{constraint_id}",
+                check_overlaps=False,
             )
             one_hot_variable_ids.update(constraint.variables)
 
