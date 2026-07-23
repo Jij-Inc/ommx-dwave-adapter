@@ -141,8 +141,6 @@ def test_encode_multi_variable_types():
     y = DecisionVariable.binary(id=1, name="y")
     z = DecisionVariable.integer(id=2, name="z", lower=1, upper=10)
     A = 2
-    # Constraint IDs are owned by the Instance and specified as dictionary keys.
-    # Keep them aligned with the dimod labels in the expected model below.
     constraint_1 = x + z >= A
     constraint_2 = z == 2
     instance = Instance.from_components(
