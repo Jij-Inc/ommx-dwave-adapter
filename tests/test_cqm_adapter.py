@@ -401,7 +401,34 @@ def test_encode_one_hot_constraint():
     assert model.constraints[label].rhs == 1
 
 
-def test_regular_and_one_hot_constraint_do_not_conflict():
+def test_encode_multiple_disjoint_one_hot_constraints():
+    x = [DecisionVariable.binary(i) for i in range(6)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[0, 1, 2]),
+            1: OneHotConstraint(variables=[3, 4, 5]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    expected_variables = {
+        "onehot_0": {0: 1, 1: 1, 2: 1},
+        "onehot_1": {3: 1, 4: 1, 5: 1},
+    }
+    for label, variables in expected_variables.items():
+        assert label in model.constraints
+        assert label in model.discrete
+        assert model.constraints[label].sense == Sense.Eq
+        assert model.constraints[label].lhs.linear == variables
+        assert model.constraints[label].rhs == 1
+
+
+def test_regular_and_one_hot_constraint_labels_do_not_conflict():
     x = [DecisionVariable.binary(i) for i in range(3)]
     instance = Instance.from_components(
         decision_variables=x,
