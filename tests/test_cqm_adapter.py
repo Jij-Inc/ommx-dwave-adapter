@@ -446,22 +446,74 @@ def test_regular_and_one_hot_constraint_labels_do_not_conflict():
     assert "onehot_0" in model.discrete
 
 
-def test_error_on_overlapping_one_hot_constraints():
-    """Overlapping variables in one-hot constraints must raise an error."""
-    x = [DecisionVariable.binary(i) for i in range(3)]
+def test_overlapping_one_hot_constraint_is_converted():
+    x = [DecisionVariable.binary(i) for i in range(4)]
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
         constraints={},
         one_hot_constraints={
             0: OneHotConstraint(variables=[0, 1]),
-            1: OneHotConstraint(variables=[1, 2]),
+            1: OneHotConstraint(variables=[1, 2, 3]),
         },
         sense=Instance.MINIMIZE,
     )
 
-    with pytest.raises(
-        OMMXDWaveAdapterError,
-        match="Variables in one-hot constraints must not overlap",
-    ):
-        OMMXLeapHybridCQMAdapter(instance)
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert set(instance.one_hot_constraints) == {1}
+    assert set(instance.removed_one_hot_constraints) == {0}
+    assert set(instance.constraints) == {0}
+
+    assert set(model.discrete) == {"onehot_1"}
+    assert model.constraints["onehot_1"].lhs.linear == {1: 1, 2: 1, 3: 1}
+    assert model.constraints["onehot_1"].rhs == 1
+
+    assert 0 in model.constraints
+    assert 0 not in model.discrete
+    assert model.constraints[0].sense == Sense.Eq
+    assert model.constraints[0].lhs.linear == {0: 1, 1: 1}
+    assert model.constraints[0].lhs.offset == -1
+    assert model.constraints[0].rhs == 0
+
+
+def test_equal_length_overlapping_one_hot_constraints_keep_first():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            1: OneHotConstraint(variables=[1, 2]),
+            0: OneHotConstraint(variables=[0, 1]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+    constraint_ids = list(instance.one_hot_constraints)
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert set(instance.one_hot_constraints) == {constraint_ids[0]}
+    assert set(instance.removed_one_hot_constraints) == {constraint_ids[1]}
+    assert set(model.discrete) == {f"onehot_{constraint_ids[0]}"}
+
+
+def test_overlapping_one_hot_constraints_use_greedy_selection():
+    x = [DecisionVariable.binary(i) for i in range(7)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[0, 1, 2, 3]),
+            1: OneHotConstraint(variables=[0, 4, 5]),
+            2: OneHotConstraint(variables=[4, 6]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert set(instance.one_hot_constraints) == {0, 2}
+    assert set(instance.removed_one_hot_constraints) == {1}
+    assert set(model.discrete) == {"onehot_0", "onehot_2"}

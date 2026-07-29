@@ -258,24 +258,31 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def _set_constraints(self):
         # Handle OneHot constraints (first-class constraint type)
         one_hot_variable_ids = set()
-        for constraint_id, constraint in self.instance.one_hot_constraints.items():
-            overlapping_variable_ids = one_hot_variable_ids.intersection(
-                constraint.variables
-            )
-            # D-Wave does not allow variables to overlap between one-hot constraints.
-            if overlapping_variable_ids:
-                raise OMMXDWaveAdapterError(
-                    "Variables in one-hot constraints must not overlap. "
-                    f"constraint id: {constraint_id}, "
-                    f"variable ids: {sorted(overlapping_variable_ids)}"
-                )
+        selected_one_hot_constraints = []
+        # Prefer constraints with more variables. The stable sort keeps the order
+        # from one_hot_constraints when two constraints have the same length.
+        sorted_one_hot_constraints = sorted(
+            self.instance.one_hot_constraints.items(),
+            key=lambda item: len(item[1].variables),
+            reverse=True,
+        )
 
+        for constraint_id, constraint in sorted_one_hot_constraints:
+            if not one_hot_variable_ids.isdisjoint(constraint.variables):
+                # dimod discrete constraints must be disjoint. Preserve the
+                # overlapping OneHot as an equivalent regular equality constraint.
+                self.instance.convert_one_hot_to_constraint(constraint_id)
+                continue
+
+            selected_one_hot_constraints.append((constraint_id, constraint))
+            one_hot_variable_ids.update(constraint.variables)
+
+        for constraint_id, constraint in selected_one_hot_constraints:
             self.model.add_discrete_from_iterable(
                 constraint.variables,
                 label=f"onehot_{constraint_id}",
                 check_overlaps=False,
             )
-            one_hot_variable_ids.update(constraint.variables)
 
         for constraint_id, constraint in self.instance.constraints.items():
             # Check if the constraints is non linear
