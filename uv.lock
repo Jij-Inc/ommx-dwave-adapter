@@ -898,8 +898,8 @@ wheels = [
 
 [[package]]
 name = "ommx"
-version = "3.0.0b1"
-source = { registry = "https://pypi.org/simple" }
+version = "3.0.0b3"
+source = { directory = "../../ommx/python/ommx" }
 dependencies = [
     { name = "ipython", version = "8.39.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -913,14 +913,19 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/a6/848b28eecba584f50fee6782fb8a57fe6b6204266d06c1de9730591e955e/ommx-3.0.0b1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:fd651a876b5487e5978cba4ff3c6be87d0465a2d80d97ebf88a4a8d53da8c3f0", size = 8072265 },
-    { url = "https://files.pythonhosted.org/packages/4f/75/d0960bb1bf91e94d0f5ca0829c919f1140306f5c4a1f3279b3d896b13d38/ommx-3.0.0b1-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:3080323292497a81b2b42711db25c8880ad7b76bbcd66f1eb12d773bc373886c", size = 8055353 },
-    { url = "https://files.pythonhosted.org/packages/3d/31/18818117d99ecc387c457bf232d5c1829fec065159c80f3f64c8241db914/ommx-3.0.0b1-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:0a607074580cb3b82cde10b683d407f26b927172da962cfe2ab8bd46ffbf871e", size = 8977907 },
-    { url = "https://files.pythonhosted.org/packages/6e/d7/11f5c782dcc62455f8cc1f4cdd69d2586dfe035e0a300f45fc9ee85035b2/ommx-3.0.0b1-cp310-abi3-win_amd64.whl", hash = "sha256:054591036bad2d19a89c8de2a783cdae218f5a98f1f624d27adc08c809697a74", size = 8523625 },
-    { url = "https://files.pythonhosted.org/packages/10/28/2737ea03da984c768722e2575070a8469fae757fddd9d2e32459ba75f8e4/ommx-3.0.0b1-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:3fb6a5253df501c7326881399bf648121a4f26d05d2716374c7ded5a73900be4", size = 8069152 },
-    { url = "https://files.pythonhosted.org/packages/1b/28/a97e296c48a9ef994ab4fbe5cd6a189dd4363a839613117446c9c75b6d94/ommx-3.0.0b1-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:b7522b77c74afda6f29b3a65cba0cc90a664660978a1b6165de550c9d1950e66", size = 8065272 },
-    { url = "https://files.pythonhosted.org/packages/17/ab/6548b5645d68933508bccd0085e39440881882ddf5d1ebdc1921ee41e9d6/ommx-3.0.0b1-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:e8fb976fce9ad8ae0bb16f8cef3e361742305f0875111e139d16abe8b1d1ad9b", size = 8992538 },
+
+[package.metadata]
+requires-dist = [
+    { name = "ipython", specifier = ">=7.0.0" },
+    { name = "msgpack", specifier = ">=1.0.0,<2.0.0" },
+    { name = "numpy", specifier = ">=1.23.0,<3.0.0" },
+    { name = "opentelemetry-exporter-otlp-proto-common", specifier = ">=1.20.0" },
+    { name = "opentelemetry-proto", specifier = ">=1.20.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
+    { name = "pandas", specifier = ">=2.0.0,<3.0.0" },
+    { name = "pyarrow", specifier = ">=16.0.0,<23.0.0" },
+    { name = "python-dateutil", specifier = ">=2.9.0,<3.0.0" },
+    { name = "typing-extensions", specifier = ">=4.12.2,<5.0.0" },
 ]
 
 [[package]]
@@ -946,7 +951,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dwave-system", specifier = ">=1.29.1" },
-    { name = "ommx", specifier = ">=3.0.0a8,<4.0.0" },
+    { name = "ommx", directory = "../../ommx/python/ommx" },
     { name = "pyright", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "ruff", marker = "extra == 'dev'" },
