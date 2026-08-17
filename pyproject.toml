@@ -37,7 +37,3 @@ dev = [
 
 [tool.setuptools_scm]
 version_file = "ommx_dwave_adapter/_version.py"
-
-# Temporary workaround until OMMX 3.0.0b3 is published to PyPI. Remove this source override afterward.
-[tool.uv.sources]
-ommx = { path = "../../ommx/python/ommx" }
