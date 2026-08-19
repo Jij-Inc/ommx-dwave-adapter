@@ -351,6 +351,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         regularized_one_hot_constraints = []
         # Prefer constraints with more variables. The stable sort keeps the order
         # from one_hot_constraints when two constraints have the same length.
+        # This selection policy follows the existing ommx-da4-adapter behavior.
         sorted_one_hot_constraints = sorted(
             self.instance.one_hot_constraints.items(),
             key=lambda item: len(item[1].variables),
