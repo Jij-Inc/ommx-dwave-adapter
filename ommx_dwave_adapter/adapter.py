@@ -163,6 +163,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
+        :param diagnostics: Reserved diagnostics sink; currently unused.
 
         Example:
         =========
@@ -226,6 +227,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
+        :param diagnostics: Reserved diagnostics sink; currently unused.
 
         Example:
         =========
