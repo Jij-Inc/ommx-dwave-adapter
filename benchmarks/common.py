@@ -1,12 +1,9 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
 
 import dimod
-from ommx.v1 import Instance
-
-from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-
 from instance import (
     build_assignment_instance,
     build_blending_instance,
@@ -20,6 +17,9 @@ from instance import (
     build_tsp_instance,
     build_unit_commitment_instance,
 )
+from ommx.v1 import Instance
+
+from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
 
 INSTANCE_BUILDERS = {
     "knapsack": build_knapsack_instance,
@@ -36,6 +36,8 @@ INSTANCE_BUILDERS = {
 }
 INSTANCE_NAMES = tuple(INSTANCE_BUILDERS)
 FORMULATIONS = ("regular", "one-hot")
+SPECIAL_CONSTRAINT_CASES = ("none", "indicator", "sos1", "indicator-sos1")
+PREPARATIONS = ("none",)
 
 PACKAGE_VERSIONS = (
     version("ommx"),
@@ -45,8 +47,34 @@ PACKAGE_VERSIONS = (
 )
 
 
-def build_instance(name: str, size: int, seed: int, formulation: str) -> Instance:
+@dataclass(frozen=True)
+class BenchmarkOperation:
+    """Separate per-sample setup from the operation being measured."""
+
+    setup: Callable[[], Any]
+    run: Callable[[Any], Any]
+
+
+def build_instance(
+    name: str,
+    size: int,
+    seed: int,
+    formulation: str,
+    special_constraints: str = "none",
+    preparation: str = "none",
+) -> Instance:
     """Select and build a benchmark Instance."""
+    if preparation != "none":
+        raise ValueError("OMMX v2 does not support Instance preparation")
+    if name == "one-hot":
+        return build_one_hot_instance(
+            size,
+            seed,
+            formulation,
+            special_constraints,
+        )
+    if special_constraints != "none":
+        raise ValueError("Special-constraint workloads are available only for one-hot")
     return INSTANCE_BUILDERS[name](size, seed, formulation)
 
 
@@ -72,15 +100,21 @@ def _build_feasible_sample(
     return sample
 
 
-def prepare_target(
+def make_benchmark_operation(
     operation: str, instance: Instance, name: str, size: int
-) -> Callable[[], Any]:
+) -> BenchmarkOperation:
     """Prepare everything outside the measured operation."""
     if operation == "instance-to-model":
-        return lambda: OMMXLeapHybridCQMAdapter(instance).solver_input
+        return BenchmarkOperation(
+            setup=lambda: instance,
+            run=lambda target: OMMXLeapHybridCQMAdapter(target).solver_input,
+        )
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     model = adapter.solver_input
     sample = _build_feasible_sample(name, size, model)
     sampleset = dimod.SampleSet.from_samples_cqm(sample, model)
-    return lambda: adapter.decode(sampleset)
+    return BenchmarkOperation(
+        setup=lambda: sampleset,
+        run=lambda solver_result: adapter.decode(solver_result),
+    )

@@ -42,3 +42,6 @@ namespaces = false
 
 [tool.setuptools_scm]
 version_file = "ommx_dwave_adapter/_version.py"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
