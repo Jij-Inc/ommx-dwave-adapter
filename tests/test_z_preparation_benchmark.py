@@ -1,0 +1,133 @@
+"""Tests for the aligned OneHot preparation benchmark workload."""
+
+import copy
+import itertools
+
+import pytest
+from ommx import ProvenanceKind, SpecialConstraintKind, State
+
+from benchmarks.instance import build_one_hot_instance
+from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
+
+
+@pytest.mark.parametrize(
+    ("special_constraints", "indicator_count", "sos1_count"),
+    [
+        ("indicator", 4, 0),
+        ("sos1", 0, 4),
+        ("indicator-sos1", 2, 2),
+    ],
+)
+def test_direct_and_prepared_cases_have_aligned_active_constraints(
+    special_constraints,
+    indicator_count,
+    sos1_count,
+):
+    size = 4
+    direct = build_one_hot_instance(
+        size,
+        formulation="one-hot",
+        special_constraints=special_constraints,
+        preparation="none",
+    )
+    source = build_one_hot_instance(
+        size,
+        formulation="one-hot",
+        special_constraints=special_constraints,
+        preparation="recommended",
+    )
+    before = source.to_v2_bytes()
+    input_class = OMMXLeapHybridCQMAdapter.INPUT_CLASS
+    assert input_class is not None
+
+    assert len(direct.constraints) == size
+    assert len(direct.one_hot_constraints) == size
+    assert direct.indicator_constraints == {}
+    assert direct.sos1_constraints == {}
+    assert len(source.constraints) == 0
+    assert len(source.one_hot_constraints) == size
+    assert len(source.indicator_constraints) == indicator_count
+    assert len(source.sos1_constraints) == sos1_count
+    assert not input_class.contains(source)
+
+    prepared = copy.copy(source)
+    prepared.prepare(
+        input_class,
+        OMMXLeapHybridCQMAdapter.recommended_preparation_policy(),
+    )
+
+    assert source.to_v2_bytes() == before
+    assert len(prepared.constraints) == size
+    assert len(prepared.one_hot_constraints) == size
+    assert prepared.indicator_constraints == {}
+    assert prepared.sos1_constraints == {}
+    assert len(prepared.removed_indicator_constraints) == indicator_count
+    assert len(prepared.removed_sos1_constraints) == sos1_count
+    assert prepared.active_special_constraint_kinds == {SpecialConstraintKind.OneHot}
+    expected_provenance = (
+        {ProvenanceKind.IndicatorConstraint, ProvenanceKind.Sos1Constraint}
+        if indicator_count and sos1_count
+        else {
+            ProvenanceKind.IndicatorConstraint
+            if indicator_count
+            else ProvenanceKind.Sos1Constraint
+        }
+    )
+    assert {
+        constraint.provenance[-1].kind for constraint in prepared.constraints.values()
+    } == expected_provenance
+    assert input_class.contains(direct)
+    assert input_class.contains(prepared)
+
+    direct_model = OMMXLeapHybridCQMAdapter(direct).solver_input
+    prepared_model = OMMXLeapHybridCQMAdapter(prepared).solver_input
+    assert direct_model.is_equal(prepared_model)
+
+
+@pytest.mark.parametrize(
+    "special_constraints",
+    ["indicator", "sos1", "indicator-sos1"],
+)
+def test_direct_source_and_prepared_cases_have_identical_feasible_states(
+    special_constraints,
+):
+    size = 2
+    baseline = build_one_hot_instance(size, formulation="one-hot")
+    direct = build_one_hot_instance(
+        size,
+        formulation="one-hot",
+        special_constraints=special_constraints,
+        preparation="none",
+    )
+    source = build_one_hot_instance(
+        size,
+        formulation="one-hot",
+        special_constraints=special_constraints,
+        preparation="recommended",
+    )
+    input_class = OMMXLeapHybridCQMAdapter.INPUT_CLASS
+    assert input_class is not None
+    prepared = copy.copy(source)
+    prepared.prepare(
+        input_class,
+        OMMXLeapHybridCQMAdapter.recommended_preparation_policy(),
+    )
+    direct_model = OMMXLeapHybridCQMAdapter(direct).solver_input
+    prepared_model = OMMXLeapHybridCQMAdapter(prepared).solver_input
+
+    for values in itertools.product((0.0, 1.0), repeat=size**2):
+        entries = dict(enumerate(values))
+        expected = baseline.evaluate(State(entries=entries))
+
+        for instance in (direct, source, prepared):
+            evaluation = instance.evaluate(State(entries=entries))
+            assert evaluation.feasible == expected.feasible
+            assert evaluation.objective == expected.objective
+        assert (
+            direct_model.check_feasible(entries)  # pyright: ignore[reportArgumentType]
+            == expected.feasible
+        )
+        assert (
+            prepared_model.check_feasible(entries)  # pyright: ignore[reportArgumentType]
+            == expected.feasible
+        )

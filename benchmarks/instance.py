@@ -4,10 +4,13 @@ import random
 from ommx import (
     Constraint,
     DecisionVariable,
+    Equality,
+    IndicatorConstraint,
     Instance,
     Linear,
     OneHotConstraint,
     Quadratic,
+    Sos1Constraint,
 )
 
 
@@ -55,7 +58,11 @@ def _build_one_hot_constraints(
 
 
 def build_one_hot_instance(
-    size: int, seed: int = 0, formulation: str = "regular"
+    size: int,
+    seed: int = 0,
+    formulation: str = "regular",
+    special_constraints: str = "none",
+    preparation: str = "none",
 ) -> Instance:
     """Build disjoint one-hot groups with a linear objective.
 
@@ -66,6 +73,21 @@ def build_one_hot_instance(
         x[group, choice] in {0, 1}
     """
     _check_size(size, minimum=2)
+    if special_constraints not in (
+        "none",
+        "indicator",
+        "sos1",
+        "indicator-sos1",
+    ):
+        raise ValueError(f"Unknown special constraints: {special_constraints}")
+    if preparation not in ("none", "recommended"):
+        raise ValueError(f"Unknown preparation: {preparation}")
+    if special_constraints != "none" and formulation != "one-hot":
+        raise ValueError(
+            "Special constraints require the one-hot formulation for this Instance"
+        )
+    if special_constraints == "none" and preparation != "none":
+        raise ValueError("Recommended preparation requires special constraints")
     random_generator = random.Random(seed)
 
     def variable_id(group: int, choice: int) -> int:
@@ -97,11 +119,78 @@ def build_one_hot_instance(
     ]
     constraints, one_hot_constraints = _build_one_hot_constraints(specs, formulation)
 
+    groups = [variable_ids for _, _, variable_ids in specs]
+    indicator_group_count = (
+        (size + 1) // 2 if special_constraints == "indicator-sos1" else size
+    )
+
+    def constraint_kind(group: int) -> str:
+        if special_constraints == "indicator":
+            return "indicator"
+        if special_constraints == "sos1":
+            return "sos1"
+        if special_constraints == "indicator-sos1":
+            return "indicator" if group < indicator_group_count else "sos1"
+        return "none"
+
+    if special_constraints != "none" and preparation == "none":
+        # Match OMMX beta3 lowering exactly so direct and prepared Instances
+        # differ only in removed constraints and provenance.
+        constraints = {
+            group: Constraint(
+                function=Linear(
+                    terms=(
+                        {
+                            variable_id: (size - 1 if index == 0 else 1)
+                            for index, variable_id in enumerate(variable_ids)
+                        }
+                        if constraint_kind(group) == "indicator"
+                        else {variable_id: 1 for variable_id in variable_ids}
+                    ),
+                    constant=(
+                        -(size - 1) if constraint_kind(group) == "indicator" else -1
+                    ),
+                ),
+                equality=Equality.LessThanOrEqualToZero,
+            )
+            for group, variable_ids in enumerate(groups)
+        }
+
+    indicator_constraints: dict[int, IndicatorConstraint] = {}
+    if special_constraints != "none" and preparation == "recommended":
+        indicator_constraints = {
+            group: IndicatorConstraint(
+                indicator_variable=variable_ids[0],
+                function=Linear(
+                    terms={variable_id: 1 for variable_id in variable_ids[1:]}
+                ),
+                equality=Equality.LessThanOrEqualToZero,
+                name="remaining-choices-disabled",
+                subscripts=[group],
+            )
+            for group, variable_ids in enumerate(groups)
+            if constraint_kind(group) == "indicator"
+        }
+
+    sos1_constraints: dict[int, Sos1Constraint] = {}
+    if special_constraints != "none" and preparation == "recommended":
+        sos1_constraints = {
+            group: Sos1Constraint(
+                variables=variable_ids,
+                name="at-most-one-choice",
+                subscripts=[group],
+            )
+            for group, variable_ids in enumerate(groups)
+            if constraint_kind(group) == "sos1"
+        }
+
     return Instance.from_components(
         decision_variables=variables,
         objective=objective,
         constraints=constraints,
+        indicator_constraints=indicator_constraints,
         one_hot_constraints=one_hot_constraints,
+        sos1_constraints=sos1_constraints,
         sense=Instance.MINIMIZE,
     )
 
