@@ -1,9 +1,305 @@
-from ommx import Instance, DecisionVariable, Polynomial, Function, OneHotConstraint
+from ommx import (
+    DecisionVariable,
+    DegreeBound,
+    Function,
+    Instance,
+    InstanceClassMismatch,
+    Kind,
+    OneHotConstraint,
+    Sense as OMMXSense,
+    Sos1Constraint,
+)
+from ommx.adapter import AdapterNotApplicableError
 from dimod.sym import Sense
 import dimod
 import pytest
 
-from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter, OMMXDWaveAdapterError
+from ommx_dwave_adapter import OMMXDWaveAdapterError, OMMXLeapHybridCQMAdapter
+from ommx_dwave_adapter.adapter import (
+    ABSOLUTE_TOLERANCE,
+    _MAX_ABS_CONTINUOUS_BOUND,
+    _MAX_ABS_INTEGER_BOUND,
+)
+
+
+@pytest.mark.parametrize("sense", [OMMXSense.Minimize, OMMXSense.Maximize])
+def test_input_class_accepts_complete_quadratic_cqm_boundary(sense):
+    b0 = DecisionVariable.binary(0)
+    b1 = DecisionVariable.binary(1)
+    x = DecisionVariable.integer(2, lower=-3, upper=3)
+    y = DecisionVariable.continuous(3, lower=-3, upper=3)
+    instance = Instance.from_components(
+        decision_variables=[b0, b1, x, y],
+        objective=b0 * x + y,
+        constraints={0: x * x <= 9, 1: b1 * x == 0},
+        one_hot_constraints={10: OneHotConstraint(variables=[b0, b1])},
+        sense=sense,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.is_applicable
+    assert report.input_membership.matching_clauses == [(0, "dwave-cqm")]
+    assert report.preconditions_checked
+    assert report.precondition_violations == ()
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        DecisionVariable.integer(
+            0,
+            lower=-_MAX_ABS_INTEGER_BOUND,
+            upper=_MAX_ABS_INTEGER_BOUND,
+        ),
+        DecisionVariable.continuous(
+            0,
+            lower=-_MAX_ABS_CONTINUOUS_BOUND,
+            upper=_MAX_ABS_CONTINUOUS_BOUND,
+        ),
+    ],
+)
+def test_accepts_dwave_variable_boundaries(variable):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.is_applicable
+    OMMXLeapHybridCQMAdapter(instance)
+
+
+@pytest.mark.parametrize(
+    ("variable", "condition", "actual", "limit"),
+    [
+        (
+            DecisionVariable.integer(
+                0,
+                lower=-(_MAX_ABS_INTEGER_BOUND + 1),
+                upper=0,
+            ),
+            "dwave.integer.lower_bound",
+            -(_MAX_ABS_INTEGER_BOUND + 1),
+            -_MAX_ABS_INTEGER_BOUND,
+        ),
+        (
+            DecisionVariable.integer(
+                0,
+                lower=0,
+                upper=_MAX_ABS_INTEGER_BOUND + 1,
+            ),
+            "dwave.integer.upper_bound",
+            _MAX_ABS_INTEGER_BOUND + 1,
+            _MAX_ABS_INTEGER_BOUND,
+        ),
+        (
+            DecisionVariable.continuous(
+                0,
+                lower=-2 * _MAX_ABS_CONTINUOUS_BOUND,
+                upper=0,
+            ),
+            "dwave.continuous.lower_bound",
+            -2 * _MAX_ABS_CONTINUOUS_BOUND,
+            -_MAX_ABS_CONTINUOUS_BOUND,
+        ),
+        (
+            DecisionVariable.continuous(
+                0,
+                lower=0,
+                upper=2 * _MAX_ABS_CONTINUOUS_BOUND,
+            ),
+            "dwave.continuous.upper_bound",
+            2 * _MAX_ABS_CONTINUOUS_BOUND,
+            _MAX_ABS_CONTINUOUS_BOUND,
+        ),
+    ],
+)
+def test_reports_out_of_range_dwave_variable_bound(variable, condition, actual, limit):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.input_membership.is_member
+    assert report.preconditions_checked
+    assert not report.is_applicable
+    [violation] = report.precondition_violations
+    assert violation.condition == condition
+    assert violation.variable_ids == {0}
+    assert violation.actual == actual
+    assert violation.limit == limit
+    with pytest.raises(AdapterNotApplicableError) as error:
+        OMMXLeapHybridCQMAdapter(instance)
+    assert error.value.report == report
+
+
+@pytest.mark.parametrize(
+    ("variable", "kind"),
+    [
+        (DecisionVariable.integer(0), "integer"),
+        (DecisionVariable.continuous(0), "continuous"),
+    ],
+)
+def test_rejects_default_unbounded_dwave_variable(variable, kind):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.input_membership.is_member
+    assert {violation.condition for violation in report.precondition_violations} == {
+        f"dwave.{kind}.lower_bound",
+        f"dwave.{kind}.upper_bound",
+    }
+    with pytest.raises(AdapterNotApplicableError):
+        OMMXLeapHybridCQMAdapter(instance)
+
+
+def test_error_on_unsupported_function():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=x[0] * x[1] * x[2],
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    with pytest.raises(AdapterNotApplicableError) as error:
+        OMMXLeapHybridCQMAdapter(instance)
+
+    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
+    assert len(mismatches) == 1
+    mismatch = mismatches[0]
+    assert isinstance(mismatch, InstanceClassMismatch.ObjectiveDegreeExceedsBound)
+    assert mismatch.actual_degree == 3
+    assert mismatch.bound == DegreeBound.at_most(2)
+
+
+def test_error_on_unsupported_constraint():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={7: x[0] * x[1] * x[2] == 0},
+        sense=OMMXSense.Minimize,
+    )
+
+    with pytest.raises(AdapterNotApplicableError) as error:
+        OMMXLeapHybridCQMAdapter(instance)
+
+    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
+    assert len(mismatches) == 1
+    mismatch = mismatches[0]
+    assert isinstance(
+        mismatch, InstanceClassMismatch.RegularConstraintDegreeExceedsBound
+    )
+    assert mismatch.actual_degrees == {7: 3}
+    assert mismatch.bound == DegreeBound.at_most(2)
+
+
+@pytest.mark.parametrize(
+    ("variable", "kind"),
+    [
+        (DecisionVariable.semi_integer(0, lower=1, upper=3), Kind.SemiInteger),
+        (
+            DecisionVariable.semi_continuous(0, lower=1, upper=3),
+            Kind.SemiContinuous,
+        ),
+    ],
+)
+def test_rejects_unsupported_variable_kinds(variable, kind):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    with pytest.raises(AdapterNotApplicableError) as error:
+        OMMXLeapHybridCQMAdapter(instance)
+
+    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
+    assert len(mismatches) == 1
+    mismatch = mismatches[0]
+    assert isinstance(mismatch, InstanceClassMismatch.VariableKindNotAllowed)
+    assert mismatch.kind == kind
+    assert mismatch.variable_ids == {0}
+
+
+def test_reports_unsupported_special_constraint_ids():
+    x = DecisionVariable.binary(0)
+    y = DecisionVariable.continuous(1)
+    instance = Instance.from_components(
+        decision_variables=[x, y],
+        objective=x + y,
+        constraints={},
+        indicator_constraints={10: (y <= 1).with_indicator(x)},
+        sos1_constraints={30: Sos1Constraint(variables=[y])},
+        sense=OMMXSense.Minimize,
+    )
+    with pytest.raises(AdapterNotApplicableError) as error:
+        OMMXLeapHybridCQMAdapter(instance)
+
+    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
+    by_type = {type(mismatch): mismatch for mismatch in mismatches}
+    indicator = by_type[InstanceClassMismatch.IndicatorConstraintsNotAllowed]
+    assert isinstance(indicator, InstanceClassMismatch.IndicatorConstraintsNotAllowed)
+    assert indicator.constraint_ids == {10}
+    sos1 = by_type[InstanceClassMismatch.Sos1ConstraintsNotAllowed]
+    assert isinstance(sos1, InstanceClassMismatch.Sos1ConstraintsNotAllowed)
+    assert sos1.constraint_ids == {30}
+
+
+def test_skips_feasible_constant_constraints():
+    x = DecisionVariable.binary(0)
+    instance = Instance.from_components(
+        decision_variables=[x],
+        objective=x,
+        constraints={
+            0: Function(ABSOLUTE_TOLERANCE / 2) == 0,
+            1: Function(-ABSOLUTE_TOLERANCE / 2) == 0,
+            2: Function(ABSOLUTE_TOLERANCE / 2) <= 0,
+            3: Function(-1) <= 0,
+        },
+        sense=OMMXSense.Minimize,
+    )
+
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+
+    assert len(adapter.sampler_input.constraints) == 0
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        Function(2 * ABSOLUTE_TOLERANCE) == 0,
+        Function(2 * ABSOLUTE_TOLERANCE) <= 0,
+    ],
+    ids=["equality", "less-than-or-equal"],
+)
+def test_rejects_infeasible_constant_constraint(constraint):
+    x = DecisionVariable.binary(0)
+    instance = Instance.from_components(
+        decision_variables=[x],
+        objective=x,
+        constraints={7: constraint},
+        sense=OMMXSense.Minimize,
+    )
+
+    with pytest.raises(OMMXDWaveAdapterError, match="id 7"):
+        OMMXLeapHybridCQMAdapter(instance)
 
 
 def test_instance_to_cqm_model():
@@ -42,44 +338,6 @@ def test_instance_to_cqm_model():
     assert model.constraints[0].lhs.offset == -W
     assert model.constraints[0].lhs.linear == {x[i].id: w[i] for i in range(N)}
     assert model.constraints[0].rhs == 0
-
-
-def test_error_on_unsupported_function():
-    decision_variables = [
-        DecisionVariable.binary(
-            id=0,
-            name="x",
-        ),
-        DecisionVariable.integer(id=1, name="y", lower=-20, upper=20),
-        DecisionVariable.continuous(
-            id=2, name="z", lower=-30, upper=30, subscripts=[0]
-        ),
-        DecisionVariable.continuous(
-            id=3, name="w", lower=float("-1e30"), upper=float("1e30"), subscripts=[1, 2]
-        ),  # TODO dwave doesn't accept -inf, +inf. how to handle this? should the adapter convert?
-    ]
-    objective = Polynomial(terms={(0, 1, 2): 2.0, (1, 2): 3.0, (2,): 4.0, (): 5.0})
-
-    instance = Instance.from_components(
-        decision_variables=decision_variables,
-        objective=objective,
-        constraints={},
-        sense=Instance.MINIMIZE,
-    )
-    with pytest.raises(OMMXDWaveAdapterError):
-        OMMXLeapHybridCQMAdapter(instance)
-
-    # cubic function
-    objective = decision_variables[0] * decision_variables[1] * decision_variables[2]
-
-    instance = Instance.from_components(
-        decision_variables=decision_variables,
-        objective=objective,
-        constraints={},
-        sense=Instance.MINIMIZE,
-    )
-    with pytest.raises(OMMXDWaveAdapterError):
-        OMMXLeapHybridCQMAdapter(instance)
 
 
 def test_encode_single_var_types():
@@ -382,7 +640,7 @@ def test_encode_one_hot_constraint():
         decision_variables=x,
         objective=0,
         constraints={},
-        one_hot_constraints={0: OneHotConstraint(variables=[0, 1, 2])},
+        one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
         sense=Instance.MINIMIZE,
     )
 
@@ -408,8 +666,8 @@ def test_encode_multiple_disjoint_one_hot_constraints():
         objective=0,
         constraints={},
         one_hot_constraints={
-            0: OneHotConstraint(variables=[0, 1, 2]),
-            1: OneHotConstraint(variables=[3, 4, 5]),
+            0: OneHotConstraint(variables=[x[0], x[1], x[2]]),
+            1: OneHotConstraint(variables=[x[3], x[4], x[5]]),
         },
         sense=Instance.MINIMIZE,
     )
@@ -434,7 +692,7 @@ def test_regular_and_one_hot_constraint_labels_do_not_conflict():
         decision_variables=x,
         objective=0,
         constraints={0: x[0] + x[1] <= 1},
-        one_hot_constraints={0: OneHotConstraint(variables=[0, 1, 2])},
+        one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
         sense=Instance.MINIMIZE,
     )
 
@@ -446,22 +704,92 @@ def test_regular_and_one_hot_constraint_labels_do_not_conflict():
     assert "onehot_0" in model.discrete
 
 
-def test_error_on_overlapping_one_hot_constraints():
-    """Overlapping variables in one-hot constraints must raise an error."""
+def test_overlapping_one_hot_constraint_is_encoded_without_mutating_input():
+    x = [DecisionVariable.binary(i) for i in range(4)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[x[0], x[1]]),
+            1: OneHotConstraint(variables=[x[1], x[2], x[3]]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+    before = instance.to_v2_bytes()
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert instance.to_v2_bytes() == before
+    assert set(instance.one_hot_constraints) == {0, 1}
+    assert instance.removed_one_hot_constraints == {}
+    assert instance.constraints == {}
+
+    assert set(model.discrete) == {"onehot_1"}
+    assert model.constraints["onehot_1"].lhs.linear == {1: 1, 2: 1, 3: 1}
+    assert model.constraints["onehot_1"].rhs == 1
+
+    assert "onehot_0" in model.constraints
+    assert "onehot_0" not in model.discrete
+    assert model.constraints["onehot_0"].sense == Sense.Eq
+    assert model.constraints["onehot_0"].lhs.linear == {0: 1, 1: 1}
+    assert model.constraints["onehot_0"].lhs.offset == 0
+    assert model.constraints["onehot_0"].rhs == 1
+
+
+def test_equal_length_overlapping_one_hot_constraints_keep_first():
     x = [DecisionVariable.binary(i) for i in range(3)]
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
         constraints={},
         one_hot_constraints={
-            0: OneHotConstraint(variables=[0, 1]),
-            1: OneHotConstraint(variables=[1, 2]),
+            1: OneHotConstraint(variables=[x[1], x[2]]),
+            0: OneHotConstraint(variables=[x[0], x[1]]),
         },
         sense=Instance.MINIMIZE,
     )
+    constraint_ids = list(instance.one_hot_constraints)
+    before = instance.to_v2_bytes()
 
-    with pytest.raises(
-        OMMXDWaveAdapterError,
-        match="Variables in one-hot constraints must not overlap",
-    ):
-        OMMXLeapHybridCQMAdapter(instance)
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert instance.to_v2_bytes() == before
+    assert set(instance.one_hot_constraints) == set(constraint_ids)
+    assert instance.removed_one_hot_constraints == {}
+    assert instance.constraints == {}
+    assert set(model.discrete) == {f"onehot_{constraint_ids[0]}"}
+    regularized_label = f"onehot_{constraint_ids[1]}"
+    regularized = instance.one_hot_constraints[constraint_ids[1]]
+    assert model.constraints[regularized_label].sense == Sense.Eq
+    assert model.constraints[regularized_label].lhs.linear == {
+        variable_id: 1 for variable_id in regularized.variables
+    }
+    assert model.constraints[regularized_label].rhs == 1
+
+
+def test_overlapping_one_hot_constraints_use_greedy_selection():
+    x = [DecisionVariable.binary(i) for i in range(7)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[x[0], x[1], x[2], x[3]]),
+            1: OneHotConstraint(variables=[x[0], x[4], x[5]]),
+            2: OneHotConstraint(variables=[x[4], x[6]]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+    before = instance.to_v2_bytes()
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert instance.to_v2_bytes() == before
+    assert set(instance.one_hot_constraints) == {0, 1, 2}
+    assert instance.removed_one_hot_constraints == {}
+    assert instance.constraints == {}
+    assert set(model.discrete) == {"onehot_0", "onehot_2"}
+    assert model.constraints["onehot_1"].sense == Sense.Eq
+    assert model.constraints["onehot_1"].lhs.linear == {0: 1, 4: 1, 5: 1}
+    assert model.constraints["onehot_1"].rhs == 1
