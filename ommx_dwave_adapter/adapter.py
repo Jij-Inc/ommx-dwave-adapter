@@ -1,9 +1,4 @@
-from collections.abc import Iterable
-from ommx.adapter import (
-    AdapterPreconditionViolation,
-    DiagnosticsSink,
-    SamplerAdapter,
-)
+from ommx.adapter import DiagnosticsSink, SamplerAdapter
 from ommx import (
     DegreeBound,
     Equality,
@@ -11,7 +6,6 @@ from ommx import (
     Instance,
     InstanceClass,
     InstanceClassClause,
-    InstanceClassMembershipReport,
     Kind,
     PreparationPolicy,
     SampleSet,
@@ -50,7 +44,7 @@ _QUADRATIC_REGULAR_CONSTRAINT_DEGREE_BOUNDS = {
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
-    INPUT_CLASS: ClassVar[InstanceClass | None] = InstanceClass(
+    INPUT_CLASS: ClassVar[InstanceClass] = InstanceClass(
         [
             InstanceClassClause(
                 label="dwave-cqm",
@@ -81,53 +75,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 }
             )
         )
-
-    @classmethod
-    def _check_preconditions(
-        cls,
-        ommx_instance: Instance,
-        input_membership: InstanceClassMembershipReport,
-    ) -> Iterable[AdapterPreconditionViolation]:
-        """Check variable bounds imposed by dimod's CQM representation."""
-        _ = input_membership
-        violations = []
-        for variable in ommx_instance.used_decision_variables:
-            if variable.kind == Kind.Integer:
-                limit = _MAX_ABS_INTEGER_BOUND
-                kind = "integer"
-            elif variable.kind == Kind.Continuous:
-                limit = _MAX_ABS_CONTINUOUS_BOUND
-                kind = "continuous"
-            else:
-                continue
-
-            if variable.bound.lower < -limit:
-                violations.append(
-                    AdapterPreconditionViolation(
-                        condition=f"dwave.{kind}.lower_bound",
-                        description=(
-                            f"D-Wave CQM {kind} variable {variable.id} has lower "
-                            f"bound {variable.bound.lower}, below {-limit}."
-                        ),
-                        variable_ids=frozenset({variable.id}),
-                        actual=variable.bound.lower,
-                        limit=-limit,
-                    )
-                )
-            if variable.bound.upper > limit:
-                violations.append(
-                    AdapterPreconditionViolation(
-                        condition=f"dwave.{kind}.upper_bound",
-                        description=(
-                            f"D-Wave CQM {kind} variable {variable.id} has upper "
-                            f"bound {variable.bound.upper}, above {limit}."
-                        ),
-                        variable_ids=frozenset({variable.id}),
-                        actual=variable.bound.upper,
-                        limit=limit,
-                    )
-                )
-        return violations
 
     def __init__(self, ommx_instance: Instance):
         """
