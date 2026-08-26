@@ -1,3 +1,5 @@
+import copy
+
 from ommx.adapter import DiagnosticsSink, SamplerAdapter
 from ommx import (
     DegreeBound,
@@ -102,11 +104,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the samples as an ommx.SampleSet.
 
+        The input instance is not modified; an isolated copy is prepared with the
+        recommended D-Wave CQM policy before preparation-free execution.
+
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
           more info.
 
-        :param ommx_instance: The ommx.Instance to solve.
+        :param ommx_instance: The ommx.Instance to prepare and sample.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
@@ -130,6 +135,37 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> solution = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
+        """
+        prepared = copy.copy(ommx_instance)
+        prepared.prepare(
+            cls.INPUT_CLASS,
+            cls.recommended_preparation_policy(),
+        )
+        return cls.sample_without_preparation(
+            prepared,
+            token=token,
+            time_limit=time_limit,
+            label=label,
+            diagnostics=diagnostics,
+        )
+
+    @classmethod
+    def sample_without_preparation(
+        cls,
+        ommx_instance: Instance,
+        *,
+        token: Optional[str] = None,
+        time_limit: Optional[int] = None,
+        label: Optional[str] = None,
+        diagnostics: DiagnosticsSink | None = None,
+    ) -> SampleSet:
+        """Sample an exact D-Wave CQM Adapter input without preparing it.
+
+        :param ommx_instance: An ommx.Instance satisfying ``INPUT_CLASS``.
+        :param token: Token for instantiating the D-Wave sampler.
+        :param time_limit: Maximum solver time in seconds.
+        :param label: Optional label to tag the problem with.
+        :param diagnostics: Reserved diagnostics sink; currently unused.
         """
         # Dwave appears to be able to read configuration from a config file
         # automatically, and this apparently includes the token. Users may want
@@ -166,11 +202,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.Solution.
 
+        The input instance is not modified; an isolated copy is prepared with the
+        recommended D-Wave CQM policy before preparation-free execution.
+
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
           more info.
 
-        :param ommx_instance: The ommx.Instance to solve.
+        :param ommx_instance: The ommx.Instance to prepare and solve.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
@@ -195,7 +234,38 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> solution = OMMXLeapHybridCQMAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
-        return cls.sample(
+        prepared = copy.copy(ommx_instance)
+        prepared.prepare(
+            cls.INPUT_CLASS,
+            cls.recommended_preparation_policy(),
+        )
+        return cls.solve_without_preparation(
+            prepared,
+            token=token,
+            time_limit=time_limit,
+            label=label,
+            diagnostics=diagnostics,
+        )
+
+    @classmethod
+    def solve_without_preparation(
+        cls,
+        ommx_instance: Instance,
+        *,
+        token: Optional[str] = None,
+        time_limit: Optional[int] = None,
+        label: Optional[str] = None,
+        diagnostics: DiagnosticsSink | None = None,
+    ) -> Solution:
+        """Return the best feasible result without preparing the input.
+
+        :param ommx_instance: An ommx.Instance satisfying ``INPUT_CLASS``.
+        :param token: Token for instantiating the D-Wave sampler.
+        :param time_limit: Maximum solver time in seconds.
+        :param label: Optional label to tag the problem with.
+        :param diagnostics: Reserved diagnostics sink; currently unused.
+        """
+        return cls.sample_without_preparation(
             ommx_instance,
             token=token,
             time_limit=time_limit,
