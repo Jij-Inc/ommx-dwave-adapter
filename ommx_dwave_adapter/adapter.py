@@ -270,6 +270,33 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def _set_decision_variables(self):
         for var in self.instance.used_decision_variables:
             kind = Kind.from_pb(var.kind)
+            lower_limit = None
+            upper_limit = None
+            if kind == Kind.Binary:
+                # dimod ignores bounds passed to add_variable for binary variables,
+                # but keep explicit limits here for consistency with the other kinds.
+                lower_limit = 0
+                upper_limit = 1
+            elif kind == Kind.Integer:
+                lower_limit = -_MAX_ABS_INTEGER_BOUND
+                upper_limit = _MAX_ABS_INTEGER_BOUND
+            elif kind == Kind.Continuous:
+                lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
+                upper_limit = _MAX_ABS_CONTINUOUS_BOUND
+
+            assert lower_limit is not None
+            assert upper_limit is not None
+            if var.bound.lower < lower_limit:
+                raise OMMXDWaveAdapterError(
+                    f"D-Wave CQM {str(kind).lower()} variable {var.id} has lower "
+                    f"bound {var.bound.lower}, below {lower_limit}."
+                )
+            if var.bound.upper > upper_limit:
+                raise OMMXDWaveAdapterError(
+                    f"D-Wave CQM {str(kind).lower()} variable {var.id} has upper "
+                    f"bound {var.bound.upper}, above {upper_limit}."
+                )
+
             self.model.add_variable(
                 _DIMOD_VARIABLE_TYPES[kind],
                 var.id,
