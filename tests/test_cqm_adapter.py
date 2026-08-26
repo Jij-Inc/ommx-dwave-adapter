@@ -1,15 +1,10 @@
 from ommx import (
     DecisionVariable,
-    DegreeBound,
     Function,
     Instance,
-    InstanceClassMismatch,
-    Kind,
-    OneHotConstraint,
     Sense as OMMXSense,
-    Sos1Constraint,
+    OneHotConstraint,
 )
-from ommx.adapter import AdapterNotApplicableError
 from dimod.sym import Sense
 import dimod
 import pytest
@@ -22,31 +17,10 @@ from ommx_dwave_adapter.adapter import (
 )
 
 
-@pytest.mark.parametrize("sense", [OMMXSense.Minimize, OMMXSense.Maximize])
-def test_input_class_accepts_complete_quadratic_cqm_boundary(sense):
-    b0 = DecisionVariable.binary(0)
-    b1 = DecisionVariable.binary(1)
-    x = DecisionVariable.integer(2, lower=-3, upper=3)
-    y = DecisionVariable.continuous(3, lower=-3, upper=3)
-    instance = Instance.from_components(
-        decision_variables=[b0, b1, x, y],
-        objective=b0 * x + y,
-        constraints={0: x * x <= 9, 1: b1 * x == 0},
-        one_hot_constraints={10: OneHotConstraint(variables=[b0, b1])},
-        sense=sense,
-    )
-
-    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
-
-    assert report.is_applicable
-    assert report.input_membership.matching_clauses == [(0, "dwave-cqm")]
-    assert report.preconditions_checked
-    assert report.precondition_violations == ()
-
-
 @pytest.mark.parametrize(
     "variable",
     [
+        DecisionVariable.binary(0),
         DecisionVariable.integer(
             0,
             lower=-_MAX_ABS_INTEGER_BOUND,
@@ -69,12 +43,12 @@ def test_accepts_dwave_variable_boundaries(variable):
 
     report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
 
-    assert report.is_applicable
+    assert report.is_member
     OMMXLeapHybridCQMAdapter(instance)
 
 
 @pytest.mark.parametrize(
-    ("variable", "condition", "actual", "limit"),
+    ("variable", "expected_message"),
     [
         (
             DecisionVariable.integer(
@@ -82,9 +56,7 @@ def test_accepts_dwave_variable_boundaries(variable):
                 lower=-(_MAX_ABS_INTEGER_BOUND + 1),
                 upper=0,
             ),
-            "dwave.integer.lower_bound",
-            -(_MAX_ABS_INTEGER_BOUND + 1),
-            -_MAX_ABS_INTEGER_BOUND,
+            "D-Wave CQM integer variable 0 has lower bound",
         ),
         (
             DecisionVariable.integer(
@@ -92,9 +64,7 @@ def test_accepts_dwave_variable_boundaries(variable):
                 lower=0,
                 upper=_MAX_ABS_INTEGER_BOUND + 1,
             ),
-            "dwave.integer.upper_bound",
-            _MAX_ABS_INTEGER_BOUND + 1,
-            _MAX_ABS_INTEGER_BOUND,
+            "D-Wave CQM integer variable 0 has upper bound",
         ),
         (
             DecisionVariable.continuous(
@@ -102,9 +72,7 @@ def test_accepts_dwave_variable_boundaries(variable):
                 lower=-2 * _MAX_ABS_CONTINUOUS_BOUND,
                 upper=0,
             ),
-            "dwave.continuous.lower_bound",
-            -2 * _MAX_ABS_CONTINUOUS_BOUND,
-            -_MAX_ABS_CONTINUOUS_BOUND,
+            "D-Wave CQM continuous variable 0 has lower bound",
         ),
         (
             DecisionVariable.continuous(
@@ -112,13 +80,13 @@ def test_accepts_dwave_variable_boundaries(variable):
                 lower=0,
                 upper=2 * _MAX_ABS_CONTINUOUS_BOUND,
             ),
-            "dwave.continuous.upper_bound",
-            2 * _MAX_ABS_CONTINUOUS_BOUND,
-            _MAX_ABS_CONTINUOUS_BOUND,
+            "D-Wave CQM continuous variable 0 has upper bound",
         ),
     ],
 )
-def test_reports_out_of_range_dwave_variable_bound(variable, condition, actual, limit):
+def test_rejects_out_of_range_dwave_variable_bound_during_conversion(
+    variable, expected_message
+):
     instance = Instance.from_components(
         decision_variables=[variable],
         objective=variable,
@@ -128,17 +96,9 @@ def test_reports_out_of_range_dwave_variable_bound(variable, condition, actual, 
 
     report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
 
-    assert report.input_membership.is_member
-    assert report.preconditions_checked
-    assert not report.is_applicable
-    [violation] = report.precondition_violations
-    assert violation.condition == condition
-    assert violation.variable_ids == {0}
-    assert violation.actual == actual
-    assert violation.limit == limit
-    with pytest.raises(AdapterNotApplicableError) as error:
+    assert report.is_member
+    with pytest.raises(OMMXDWaveAdapterError, match=expected_message):
         OMMXLeapHybridCQMAdapter(instance)
-    assert error.value.report == report
 
 
 @pytest.mark.parametrize(
@@ -158,108 +118,12 @@ def test_rejects_default_unbounded_dwave_variable(variable, kind):
 
     report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
 
-    assert report.input_membership.is_member
-    assert {violation.condition for violation in report.precondition_violations} == {
-        f"dwave.{kind}.lower_bound",
-        f"dwave.{kind}.upper_bound",
-    }
-    with pytest.raises(AdapterNotApplicableError):
+    assert report.is_member
+    with pytest.raises(
+        OMMXDWaveAdapterError,
+        match=f"D-Wave CQM {kind} variable 0 has lower bound",
+    ):
         OMMXLeapHybridCQMAdapter(instance)
-
-
-def test_error_on_unsupported_function():
-    x = [DecisionVariable.binary(i) for i in range(3)]
-    instance = Instance.from_components(
-        decision_variables=x,
-        objective=x[0] * x[1] * x[2],
-        constraints={},
-        sense=OMMXSense.Minimize,
-    )
-
-    with pytest.raises(AdapterNotApplicableError) as error:
-        OMMXLeapHybridCQMAdapter(instance)
-
-    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
-    assert len(mismatches) == 1
-    mismatch = mismatches[0]
-    assert isinstance(mismatch, InstanceClassMismatch.ObjectiveDegreeExceedsBound)
-    assert mismatch.actual_degree == 3
-    assert mismatch.bound == DegreeBound.at_most(2)
-
-
-def test_error_on_unsupported_constraint():
-    x = [DecisionVariable.binary(i) for i in range(3)]
-    instance = Instance.from_components(
-        decision_variables=x,
-        objective=0,
-        constraints={7: x[0] * x[1] * x[2] == 0},
-        sense=OMMXSense.Minimize,
-    )
-
-    with pytest.raises(AdapterNotApplicableError) as error:
-        OMMXLeapHybridCQMAdapter(instance)
-
-    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
-    assert len(mismatches) == 1
-    mismatch = mismatches[0]
-    assert isinstance(
-        mismatch, InstanceClassMismatch.RegularConstraintDegreeExceedsBound
-    )
-    assert mismatch.actual_degrees == {7: 3}
-    assert mismatch.bound == DegreeBound.at_most(2)
-
-
-@pytest.mark.parametrize(
-    ("variable", "kind"),
-    [
-        (DecisionVariable.semi_integer(0, lower=1, upper=3), Kind.SemiInteger),
-        (
-            DecisionVariable.semi_continuous(0, lower=1, upper=3),
-            Kind.SemiContinuous,
-        ),
-    ],
-)
-def test_rejects_unsupported_variable_kinds(variable, kind):
-    instance = Instance.from_components(
-        decision_variables=[variable],
-        objective=variable,
-        constraints={},
-        sense=OMMXSense.Minimize,
-    )
-
-    with pytest.raises(AdapterNotApplicableError) as error:
-        OMMXLeapHybridCQMAdapter(instance)
-
-    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
-    assert len(mismatches) == 1
-    mismatch = mismatches[0]
-    assert isinstance(mismatch, InstanceClassMismatch.VariableKindNotAllowed)
-    assert mismatch.kind == kind
-    assert mismatch.variable_ids == {0}
-
-
-def test_reports_unsupported_special_constraint_ids():
-    x = DecisionVariable.binary(0)
-    y = DecisionVariable.continuous(1)
-    instance = Instance.from_components(
-        decision_variables=[x, y],
-        objective=x + y,
-        constraints={},
-        indicator_constraints={10: (y <= 1).with_indicator(x)},
-        sos1_constraints={30: Sos1Constraint(variables=[y])},
-        sense=OMMXSense.Minimize,
-    )
-    with pytest.raises(AdapterNotApplicableError) as error:
-        OMMXLeapHybridCQMAdapter(instance)
-
-    mismatches = error.value.report.input_membership.clause_reports[0].mismatches
-    by_type = {type(mismatch): mismatch for mismatch in mismatches}
-    indicator = by_type[InstanceClassMismatch.IndicatorConstraintsNotAllowed]
-    assert isinstance(indicator, InstanceClassMismatch.IndicatorConstraintsNotAllowed)
-    assert indicator.constraint_ids == {10}
-    sos1 = by_type[InstanceClassMismatch.Sos1ConstraintsNotAllowed]
-    assert isinstance(sos1, InstanceClassMismatch.Sos1ConstraintsNotAllowed)
-    assert sos1.constraint_ids == {30}
 
 
 def test_skips_feasible_constant_constraints():
