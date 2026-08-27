@@ -50,11 +50,33 @@ def test_input_class_accepts_complete_quadratic_cqm_boundary(sense):
         one_hot_constraints={10: OneHotConstraint(variables=[b0, b1])},
         sense=sense,
     )
+    before = instance.to_v2_bytes()
 
     report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+    OMMXLeapHybridCQMAdapter(instance)
 
     assert report.is_member
     assert report.matching_clauses == [(0, "dwave-cqm")]
+    assert instance.to_v2_bytes() == before
+
+
+def test_accepts_unused_unsupported_variable_kind_without_mutating_input():
+    used = DecisionVariable.binary(0)
+    unused = DecisionVariable.semi_integer(1, lower=1, upper=3)
+    instance = Instance.from_components(
+        decision_variables=[used, unused],
+        objective=used,
+        constraints={},
+        sense=Sense.Minimize,
+    )
+    before = instance.to_v2_bytes()
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+
+    assert report.is_member
+    assert set(adapter.sampler_input.variables) == {used.id}
+    assert instance.to_v2_bytes() == before
 
 
 def test_error_on_unsupported_function():

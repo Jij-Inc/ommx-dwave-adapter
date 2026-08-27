@@ -15,20 +15,11 @@ from ommx.adapter import AdapterNotApplicableError
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
 
 
-def test_recommended_preparation_policies_are_independent() -> None:
-    first = OMMXLeapHybridCQMAdapter.recommended_preparation_policy()
-    second = OMMXLeapHybridCQMAdapter.recommended_preparation_policy()
-
-    assert first is not second
-    first.special_constraints = None
-    assert second.special_constraints is not None
-
-
-def test_recommended_preparation_lowers_only_unsupported_special_constraints() -> None:
+def _instance_with_unsupported_special_constraints() -> Instance:
     indicator = DecisionVariable.binary(0)
     one_hot_variables = [DecisionVariable.binary(i) for i in range(1, 3)]
     value = DecisionVariable.continuous(3, lower=0, upper=2)
-    instance = Instance.from_components(
+    return Instance.from_components(
         decision_variables=[indicator, *one_hot_variables, value],
         objective=value,
         constraints={},
@@ -39,6 +30,37 @@ def test_recommended_preparation_lowers_only_unsupported_special_constraints() -
         sos1_constraints={20: Sos1Constraint(variables=one_hot_variables)},
         sense=Sense.Maximize,
     )
+
+
+def test_recommended_preparation_policies_are_independent() -> None:
+    first = OMMXLeapHybridCQMAdapter.recommended_preparation_policy()
+    second = OMMXLeapHybridCQMAdapter.recommended_preparation_policy()
+
+    assert first is not second
+    first.special_constraints = None
+    assert second.special_constraints is not None
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    ["sample_without_preparation", "solve_without_preparation"],
+    ids=["sample", "solve"],
+)
+def test_preparation_rejects_unsupported_special_constraints_without_mutating_input(
+    method_name: str,
+) -> None:
+    instance = _instance_with_unsupported_special_constraints()
+    before = instance.to_v2_bytes()
+    method = getattr(OMMXLeapHybridCQMAdapter, method_name)
+
+    with pytest.raises(AdapterNotApplicableError):
+        method(instance, token="dummy")
+
+    assert instance.to_v2_bytes() == before
+
+
+def test_recommended_preparation_lowers_only_unsupported_special_constraints() -> None:
+    instance = _instance_with_unsupported_special_constraints()
     before = instance.to_v2_bytes()
     input_class = OMMXLeapHybridCQMAdapter.INPUT_CLASS
 
