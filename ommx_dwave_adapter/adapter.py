@@ -124,7 +124,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable
             >>>
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -134,7 +134,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             ...     sense=Instance.MINIMIZE,
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
-            >>> solution = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
+            >>> sample_set = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
         """
         prepared = copy.copy(ommx_instance)
         prepared.prepare(
@@ -222,7 +222,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable
             >>>
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -302,7 +302,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable
             >>> from dwave.system import LeapHybridCQMSampler
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
