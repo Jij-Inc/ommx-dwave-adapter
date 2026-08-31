@@ -6,7 +6,8 @@ import itertools
 import pytest
 from ommx import ProvenanceKind, SpecialConstraintKind, State
 
-from benchmarks.instance import build_one_hot_instance
+from benchmarks.common import build_instance, make_benchmark_operation
+from benchmarks.instance import build_one_hot_preparation_instance
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
 
 
@@ -24,13 +25,13 @@ def test_direct_and_prepared_cases_have_aligned_active_constraints(
     sos1_count,
 ):
     size = 4
-    direct = build_one_hot_instance(
+    direct = build_one_hot_preparation_instance(
         size,
         formulation="one-hot",
         special_constraints=special_constraints,
         preparation="none",
     )
-    source = build_one_hot_instance(
+    source = build_one_hot_preparation_instance(
         size,
         formulation="one-hot",
         special_constraints=special_constraints,
@@ -92,14 +93,14 @@ def test_direct_source_and_prepared_cases_have_identical_feasible_states(
     special_constraints,
 ):
     size = 2
-    baseline = build_one_hot_instance(size, formulation="one-hot")
-    direct = build_one_hot_instance(
+    baseline = build_one_hot_preparation_instance(size)
+    direct = build_one_hot_preparation_instance(
         size,
         formulation="one-hot",
         special_constraints=special_constraints,
         preparation="none",
     )
-    source = build_one_hot_instance(
+    source = build_one_hot_preparation_instance(
         size,
         formulation="one-hot",
         special_constraints=special_constraints,
@@ -130,4 +131,88 @@ def test_direct_source_and_prepared_cases_have_identical_feasible_states(
         assert (
             prepared_model.check_feasible(entries)  # pyright: ignore[reportArgumentType]
             == expected.feasible
+        )
+
+
+@pytest.mark.parametrize(
+    (
+        "instance_name",
+        "formulation",
+        "special_constraints",
+        "preparation",
+        "method_name",
+    ),
+    [
+        ("tsp", "regular", "none", "none", "solve_without_preparation"),
+        ("tsp", "one-hot", "none", "none", "solve_without_preparation"),
+        (
+            "one-hot-preparation",
+            "one-hot",
+            "none",
+            "none",
+            "solve_without_preparation",
+        ),
+        (
+            "one-hot-preparation",
+            "one-hot",
+            "indicator",
+            "none",
+            "solve_without_preparation",
+        ),
+        ("one-hot-preparation", "one-hot", "indicator", "recommended", "solve"),
+    ],
+)
+def test_end_to_end_uses_the_preparation_appropriate_api(
+    monkeypatch,
+    instance_name,
+    formulation,
+    special_constraints,
+    preparation,
+    method_name,
+):
+    instance = build_instance(
+        instance_name,
+        2,
+        0,
+        formulation,
+        special_constraints,
+        preparation,
+    )
+    expected_solution = object()
+    calls = []
+
+    def fake_solve(cls, target, *, token, time_limit):
+        calls.append((cls, target, token, time_limit))
+        return expected_solution
+
+    monkeypatch.setenv("DWAVE_API_TOKEN", "test-token")
+    monkeypatch.setattr(
+        OMMXLeapHybridCQMAdapter,
+        method_name,
+        classmethod(fake_solve),
+    )
+
+    benchmark = make_benchmark_operation(
+        "end-to-end",
+        instance,
+        instance_name,
+        2,
+        5,
+        special_constraints,
+        preparation,
+    )
+    context = benchmark.setup()
+    solution = benchmark.run(context)
+
+    assert context is instance
+    assert solution is expected_solution
+    assert calls == [(OMMXLeapHybridCQMAdapter, instance, "test-token", 5)]
+
+
+def test_one_hot_baseline_rejects_recommended_preparation():
+    with pytest.raises(ValueError, match="requires special constraints"):
+        build_one_hot_preparation_instance(
+            2,
+            special_constraints="none",
+            preparation="recommended",
         )
