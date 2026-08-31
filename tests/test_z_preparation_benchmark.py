@@ -5,7 +5,6 @@ import itertools
 import pytest
 from ommx.v1 import State
 
-from benchmarks.common import make_benchmark_operation
 from benchmarks.instance import build_one_hot_preparation_instance
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
 
@@ -57,38 +56,3 @@ def test_one_hot_preparation_baseline_has_same_feasible_states(
             model.check_feasible(entries)  # pyright: ignore[reportArgumentType]
             == expected.feasible
         )
-
-
-@pytest.mark.parametrize("special_constraints", ["none", "indicator"])
-def test_end_to_end_uses_v2_solve(monkeypatch, special_constraints):
-    instance = build_one_hot_preparation_instance(
-        2,
-        special_constraints=special_constraints,
-    )
-    expected_solution = object()
-    calls = []
-
-    def fake_solve(cls, target, *, token, time_limit):
-        calls.append((cls, target, token, time_limit))
-        return expected_solution
-
-    monkeypatch.setenv("DWAVE_API_TOKEN", "test-token")
-    monkeypatch.setattr(
-        OMMXLeapHybridCQMAdapter,
-        "solve",
-        classmethod(fake_solve),
-    )
-
-    benchmark = make_benchmark_operation(
-        "end-to-end",
-        instance,
-        "one-hot-preparation",
-        2,
-        5,
-    )
-    context = benchmark.setup()
-    solution = benchmark.run(context)
-
-    assert context is instance
-    assert solution is expected_solution
-    assert calls == [(OMMXLeapHybridCQMAdapter, instance, "test-token", 5)]

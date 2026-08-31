@@ -1,7 +1,6 @@
 # Adapter conversion benchmarks
 
 これまでの測定結果は [benchmark-results-20260825.md](benchmark-results-20260825.md) にまとめています。
-この結果はE2E測定追加前のものであり、拡張後の比較行列は再測定後に更新します。
 
 問題は `--instance`、サイズは `--size` で選択します。
 すべて固定seedからOMMX v2 Instanceを直接生成します。
@@ -64,16 +63,12 @@ OneHotグループを持つ比較基準です。OMMX v2にはfirst-classなIndic
 `instance-to-model` はAdapterの生成だけを測定します。
 `result-to-solution` は決定的な実行可能解からローカルでdimod SampleSetを測定外に生成し、
 `adapter.decode(sampleset)`だけを測定します。
-`end-to-end` はv2の `solve()` を使い、Adapter変換、Leap求解、decodeを含む公開API全体を測定します。
-v2にはPreparationがないため、このAPIはv3の `solve_without_preparation()` に対応します。
-E2Eは通信とリモート求解の変動を含む補助指標であり、Adapter固有の変化は分解測定で判断します。
 時間測定では、プロセス内でウォームアップ前の初回実行時間と中央値を記録します。
-既定値はE2E以外がwarmup 3回・repeat 20回、E2Eがwarmupなし・repeat 3回です。
+既定値はwarmup 3回・repeat 20回です。
 実際の値はCSVの `warmup` / `repeat` 列にも記録されます。
 メモリ測定では、ウォームアップ前の初回実行と、その実行をウォームアップとした2回目のピークメモリを記録します。
 時間計測中はGCを停止します。
-E2E以外はクラウドsolverを使用しないため、D-Wave Leap tokenは不要です。
-E2Eのsolver time limitは既定値の5秒です。
+クラウドsolverは使用しないため、D-Wave Leap tokenは不要です。
 
 全推奨サイズを測定する場合のパターン数は次のとおりです。
 
@@ -81,8 +76,7 @@ E2Eのsolver time limitは既定値の5秒です。
 | --- | ---: | ---: | ---: |
 | `instance-to-model` | 30 | 12 | 42 |
 | `result-to-solution` | 30 | 12 | 42 |
-| `end-to-end` | 3 | 12 | 15 |
-| **合計** | **63** | **36** | **99** |
+| **合計** | **60** | **24** | **84** |
 
 ## 処理時間
 
@@ -127,27 +121,6 @@ for special_constraints in none indicator sos1 indicator-sos1; do
 done
 ```
 
-E2E測定にはD-Wave Leap tokenが必要です。
-
-```console
-export DWAVE_API_TOKEN=YOUR_TOKEN
-
-for size in 10 20 30; do
-  uv run --frozen python benchmarks/timing.py end-to-end \
-    --instance tsp --formulation one-hot --size "$size" \
-    | tee "benchmark_results/v2-one-hot-end-to-end-timing-${size}.csv"
-done
-
-for special_constraints in none indicator sos1 indicator-sos1; do
-  for size in 10 20 30; do
-    uv run --frozen python benchmarks/timing.py end-to-end \
-      --instance one-hot-preparation --formulation one-hot \
-      --special-constraints "$special_constraints" --size "$size" \
-      | tee "benchmark_results/v2-${special_constraints}-end-to-end-timing-${size}.csv"
-  done
-done
-```
-
 ## ピークメモリ
 
 サイズごとに別プロセスで実行します。
@@ -160,7 +133,4 @@ uv run --frozen --with memray python benchmarks/memory.py instance-to-model \
   --instance one-hot-preparation --formulation one-hot \
   --special-constraints indicator-sos1 --size 20
 
-uv run --frozen --with memray python benchmarks/memory.py end-to-end \
-  --instance one-hot-preparation --formulation one-hot \
-  --special-constraints indicator-sos1 --size 20
 ```

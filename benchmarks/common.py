@@ -1,4 +1,3 @@
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -30,7 +29,7 @@ INSTANCE_BUILDERS = {
 INSTANCE_NAMES = tuple(INSTANCE_BUILDERS)
 FORMULATIONS = ("regular", "one-hot")
 SPECIAL_CONSTRAINT_CASES = ("none", "indicator", "sos1", "indicator-sos1")
-OPERATIONS = ("instance-to-model", "result-to-solution", "end-to-end")
+OPERATIONS = ("instance-to-model", "result-to-solution")
 
 PACKAGE_VERSIONS = (
     version("ommx"),
@@ -97,26 +96,12 @@ def make_benchmark_operation(
     instance: Instance,
     name: str,
     size: int,
-    solver_time_limit_s: int,
 ) -> BenchmarkOperation:
     """Prepare everything outside the measured operation."""
     if operation == "instance-to-model":
         return BenchmarkOperation(
             setup=lambda: instance,
             run=lambda target: OMMXLeapHybridCQMAdapter(target).solver_input,
-        )
-
-    if operation == "end-to-end":
-        token = os.environ.get("DWAVE_API_TOKEN")
-        if not token:
-            raise RuntimeError("DWAVE_API_TOKEN is required")
-        return BenchmarkOperation(
-            setup=lambda: instance,
-            run=lambda target: OMMXLeapHybridCQMAdapter.solve(
-                target,
-                token=token,
-                time_limit=solver_time_limit_s,
-            ),
         )
 
     if operation != "result-to-solution":
