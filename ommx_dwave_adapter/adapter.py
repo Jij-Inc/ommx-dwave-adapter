@@ -1,9 +1,6 @@
-from collections.abc import Iterable
-from ommx.adapter import (
-    AdapterPreconditionViolation,
-    DiagnosticsSink,
-    SamplerAdapter,
-)
+import copy
+
+from ommx.adapter import DiagnosticsSink, SamplerAdapter
 from ommx import (
     DegreeBound,
     Equality,
@@ -11,7 +8,6 @@ from ommx import (
     Instance,
     InstanceClass,
     InstanceClassClause,
-    InstanceClassMembershipReport,
     Kind,
     PreparationPolicy,
     SampleSet,
@@ -50,7 +46,7 @@ _QUADRATIC_REGULAR_CONSTRAINT_DEGREE_BOUNDS = {
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
-    INPUT_CLASS: ClassVar[InstanceClass | None] = InstanceClass(
+    INPUT_CLASS: ClassVar[InstanceClass] = InstanceClass(
         [
             InstanceClassClause(
                 label="dwave-cqm",
@@ -82,53 +78,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             )
         )
 
-    @classmethod
-    def _check_preconditions(
-        cls,
-        ommx_instance: Instance,
-        input_membership: InstanceClassMembershipReport,
-    ) -> Iterable[AdapterPreconditionViolation]:
-        """Check variable bounds imposed by dimod's CQM representation."""
-        _ = input_membership
-        violations = []
-        for variable in ommx_instance.used_decision_variables:
-            if variable.kind == Kind.Integer:
-                limit = _MAX_ABS_INTEGER_BOUND
-                kind = "integer"
-            elif variable.kind == Kind.Continuous:
-                limit = _MAX_ABS_CONTINUOUS_BOUND
-                kind = "continuous"
-            else:
-                continue
-
-            if variable.bound.lower < -limit:
-                violations.append(
-                    AdapterPreconditionViolation(
-                        condition=f"dwave.{kind}.lower_bound",
-                        description=(
-                            f"D-Wave CQM {kind} variable {variable.id} has lower "
-                            f"bound {variable.bound.lower}, below {-limit}."
-                        ),
-                        variable_ids=frozenset({variable.id}),
-                        actual=variable.bound.lower,
-                        limit=-limit,
-                    )
-                )
-            if variable.bound.upper > limit:
-                violations.append(
-                    AdapterPreconditionViolation(
-                        condition=f"dwave.{kind}.upper_bound",
-                        description=(
-                            f"D-Wave CQM {kind} variable {variable.id} has upper "
-                            f"bound {variable.bound.upper}, above {limit}."
-                        ),
-                        variable_ids=frozenset({variable.id}),
-                        actual=variable.bound.upper,
-                        limit=limit,
-                    )
-                )
-        return violations
-
     def __init__(self, ommx_instance: Instance):
         """
         :param ommx_instance: The ommx.Instance to sample.
@@ -155,11 +104,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the samples as an ommx.SampleSet.
 
+        The input instance is not modified; an isolated copy is prepared with the
+        recommended D-Wave CQM policy before preparation-free execution.
+
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
           more info.
 
-        :param ommx_instance: The ommx.Instance to solve.
+        :param ommx_instance: The ommx.Instance to prepare and sample.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
@@ -172,7 +124,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable
             >>>
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -182,7 +134,38 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             ...     sense=Instance.MINIMIZE,
             ... )
             >>> token = "YOUR API TOKEN" # Set your API token
-            >>> solution = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
+            >>> sample_set = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
+        """
+        prepared = copy.copy(ommx_instance)
+        prepared.prepare(
+            cls.INPUT_CLASS,
+            cls.recommended_preparation_policy(),
+        )
+        return cls.sample_without_preparation(
+            prepared,
+            token=token,
+            time_limit=time_limit,
+            label=label,
+            diagnostics=diagnostics,
+        )
+
+    @classmethod
+    def sample_without_preparation(
+        cls,
+        ommx_instance: Instance,
+        *,
+        token: Optional[str] = None,
+        time_limit: Optional[int] = None,
+        label: Optional[str] = None,
+        diagnostics: DiagnosticsSink | None = None,
+    ) -> SampleSet:
+        """Sample an exact D-Wave CQM Adapter input without preparing it.
+
+        :param ommx_instance: An ommx.Instance satisfying ``INPUT_CLASS``.
+        :param token: Token for instantiating the D-Wave sampler.
+        :param time_limit: Maximum solver time in seconds.
+        :param label: Optional label to tag the problem with.
+        :param diagnostics: Reserved diagnostics sink; currently unused.
         """
         # Dwave appears to be able to read configuration from a config file
         # automatically, and this apparently includes the token. Users may want
@@ -219,11 +202,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.Solution.
 
+        The input instance is not modified; an isolated copy is prepared with the
+        recommended D-Wave CQM policy before preparation-free execution.
+
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
           more info.
 
-        :param ommx_instance: The ommx.Instance to solve.
+        :param ommx_instance: The ommx.Instance to prepare and solve.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
@@ -236,7 +222,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable
             >>>
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -248,7 +234,38 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> solution = OMMXLeapHybridCQMAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
-        return cls.sample(
+        prepared = copy.copy(ommx_instance)
+        prepared.prepare(
+            cls.INPUT_CLASS,
+            cls.recommended_preparation_policy(),
+        )
+        return cls.solve_without_preparation(
+            prepared,
+            token=token,
+            time_limit=time_limit,
+            label=label,
+            diagnostics=diagnostics,
+        )
+
+    @classmethod
+    def solve_without_preparation(
+        cls,
+        ommx_instance: Instance,
+        *,
+        token: Optional[str] = None,
+        time_limit: Optional[int] = None,
+        label: Optional[str] = None,
+        diagnostics: DiagnosticsSink | None = None,
+    ) -> Solution:
+        """Return the best feasible result without preparing the input.
+
+        :param ommx_instance: An ommx.Instance satisfying ``INPUT_CLASS``.
+        :param token: Token for instantiating the D-Wave sampler.
+        :param time_limit: Maximum solver time in seconds.
+        :param label: Optional label to tag the problem with.
+        :param diagnostics: Reserved diagnostics sink; currently unused.
+        """
+        return cls.sample_without_preparation(
             ommx_instance,
             token=token,
             time_limit=time_limit,
@@ -285,7 +302,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable, Linear
+            >>> from ommx import Instance, DecisionVariable
             >>> from dwave.system import LeapHybridCQMSampler
             >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
             >>> ommx_instance = Instance.from_components(
@@ -323,6 +340,33 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def _set_decision_variables(self):
         for var in self.instance.used_decision_variables:
             kind = Kind.from_pb(var.kind)
+            lower_limit = None
+            upper_limit = None
+            if kind == Kind.Binary:
+                # dimod ignores bounds passed to add_variable for binary variables,
+                # but keep explicit limits here for consistency with the other kinds.
+                lower_limit = 0
+                upper_limit = 1
+            elif kind == Kind.Integer:
+                lower_limit = -_MAX_ABS_INTEGER_BOUND
+                upper_limit = _MAX_ABS_INTEGER_BOUND
+            elif kind == Kind.Continuous:
+                lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
+                upper_limit = _MAX_ABS_CONTINUOUS_BOUND
+
+            assert lower_limit is not None
+            assert upper_limit is not None
+            if var.bound.lower < lower_limit:
+                raise OMMXDWaveAdapterError(
+                    f"D-Wave CQM {str(kind).lower()} variable {var.id} has lower "
+                    f"bound {var.bound.lower}, below {lower_limit}."
+                )
+            if var.bound.upper > upper_limit:
+                raise OMMXDWaveAdapterError(
+                    f"D-Wave CQM {str(kind).lower()} variable {var.id} has upper "
+                    f"bound {var.bound.upper}, above {upper_limit}."
+                )
+
             self.model.add_variable(
                 _DIMOD_VARIABLE_TYPES[kind],
                 var.id,

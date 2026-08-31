@@ -4,10 +4,7 @@ import pytest
 
 from ommx import (
     DecisionVariable,
-    DegreeBound,
-    Equality,
     Instance,
-    Kind,
     OneHotConstraint,
     Sense,
     Sos1Constraint,
@@ -18,26 +15,21 @@ from ommx.adapter import AdapterNotApplicableError
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
 
 
-def test_declares_quadratic_cqm_input_class() -> None:
-    input_class = OMMXLeapHybridCQMAdapter.INPUT_CLASS
-    assert input_class is not None
-    [clause] = input_class.clauses
-
-    assert clause.label == "dwave-cqm"
-    assert clause.allowed_variable_kinds == {
-        Kind.Binary,
-        Kind.Integer,
-        Kind.Continuous,
-    }
-    assert clause.objective_degree_bound == DegreeBound.at_most(2)
-    assert clause.regular_constraint_degree_bounds == {
-        Equality.EqualToZero: DegreeBound.at_most(2),
-        Equality.LessThanOrEqualToZero: DegreeBound.at_most(2),
-    }
-    assert clause.indicator_constraint_degree_bounds == {}
-    assert clause.allows_one_hot
-    assert not clause.allows_sos1
-    assert clause.allowed_senses == {Sense.Minimize, Sense.Maximize}
+def _instance_with_unsupported_special_constraints() -> Instance:
+    indicator = DecisionVariable.binary(0)
+    one_hot_variables = [DecisionVariable.binary(i) for i in range(1, 3)]
+    value = DecisionVariable.continuous(3, lower=0, upper=2)
+    return Instance.from_components(
+        decision_variables=[indicator, *one_hot_variables, value],
+        objective=value,
+        constraints={},
+        indicator_constraints={30: (value <= 1).with_indicator(indicator)},
+        one_hot_constraints={
+            10: OneHotConstraint(variables=one_hot_variables),
+        },
+        sos1_constraints={20: Sos1Constraint(variables=one_hot_variables)},
+        sense=Sense.Maximize,
+    )
 
 
 def test_recommended_preparation_policies_are_independent() -> None:
@@ -49,26 +41,30 @@ def test_recommended_preparation_policies_are_independent() -> None:
     assert second.special_constraints is not None
 
 
+@pytest.mark.parametrize(
+    "method_name",
+    ["sample_without_preparation", "solve_without_preparation"],
+    ids=["sample", "solve"],
+)
+def test_preparation_rejects_unsupported_special_constraints_without_mutating_input(
+    method_name: str,
+) -> None:
+    instance = _instance_with_unsupported_special_constraints()
+    before = instance.to_v2_bytes()
+    method = getattr(OMMXLeapHybridCQMAdapter, method_name)
+
+    with pytest.raises(AdapterNotApplicableError):
+        method(instance, token="dummy")
+
+    assert instance.to_v2_bytes() == before
+
+
 def test_recommended_preparation_lowers_only_unsupported_special_constraints() -> None:
-    indicator = DecisionVariable.binary(0)
-    one_hot_variables = [DecisionVariable.binary(i) for i in range(1, 3)]
-    value = DecisionVariable.continuous(3, lower=0, upper=2)
-    instance = Instance.from_components(
-        decision_variables=[indicator, *one_hot_variables, value],
-        objective=value,
-        constraints={},
-        indicator_constraints={30: (value <= 1).with_indicator(indicator)},
-        one_hot_constraints={
-            10: OneHotConstraint(variables=one_hot_variables),
-        },
-        sos1_constraints={20: Sos1Constraint(variables=one_hot_variables)},
-        sense=Sense.Maximize,
-    )
+    instance = _instance_with_unsupported_special_constraints()
     before = instance.to_v2_bytes()
     input_class = OMMXLeapHybridCQMAdapter.INPUT_CLASS
-    assert input_class is not None
 
-    assert not OMMXLeapHybridCQMAdapter.check_applicability(instance).is_applicable
+    assert not OMMXLeapHybridCQMAdapter.check_applicability(instance).is_member
     with pytest.raises(AdapterNotApplicableError):
         OMMXLeapHybridCQMAdapter(instance)
     assert instance.to_v2_bytes() == before
@@ -89,7 +85,7 @@ def test_recommended_preparation_lowers_only_unsupported_special_constraints() -
         SpecialConstraintKind.OneHot,
     }
     assert input_class.contains(prepared)
-    assert OMMXLeapHybridCQMAdapter.check_applicability(prepared).is_applicable
+    assert OMMXLeapHybridCQMAdapter.check_applicability(prepared).is_member
 
     adapter = OMMXLeapHybridCQMAdapter(prepared)
     assert adapter.instance is prepared
