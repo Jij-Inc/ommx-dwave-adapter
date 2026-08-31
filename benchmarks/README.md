@@ -1,6 +1,6 @@
 # Adapter conversion benchmarks
 
-これまでの測定結果は [benchmark-results-20260825.md](benchmark-results-20260825.md) にまとめています。
+最新の測定結果は [benchmark-results-20260831-beta4.md](benchmark-results-20260831-beta4.md) にまとめています。
 
 問題は `--instance`、サイズは `--size` で選択します。
 すべて固定seedからOMMX v3 Instanceを直接生成します。
