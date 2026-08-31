@@ -52,13 +52,13 @@ def _build_one_hot_constraints(
     )
 
 
-def build_one_hot_instance(
+def build_one_hot_preparation_instance(
     size: int,
     seed: int = 0,
-    formulation: str = "regular",
+    formulation: str = "one-hot",
     special_constraints: str = "none",
 ) -> Instance:
-    """Build disjoint one-hot groups with a linear objective.
+    """Build an OMMX v2 counterpart of a prepared v3 benchmark Instance.
 
     Minimize:
         sum_{group, choice} cost[group, choice] * x[group, choice]
@@ -67,6 +67,10 @@ def build_one_hot_instance(
         x[group, choice] in {0, 1}
     """
     _check_size(size, minimum=2)
+    if formulation != "one-hot":
+        raise ValueError(
+            "The one-hot-preparation Instance only supports one-hot formulation"
+        )
     if special_constraints not in (
         "none",
         "indicator",
@@ -74,8 +78,6 @@ def build_one_hot_instance(
         "indicator-sos1",
     ):
         raise ValueError(f"Unknown special constraints: {special_constraints}")
-    if special_constraints != "none" and formulation != "one-hot":
-        raise ValueError("Special-constraint workloads require the one-hot formulation")
     random_generator = random.Random(seed)
 
     def variable_id(group: int, choice: int) -> int:
@@ -294,7 +296,6 @@ def build_assignment_instance(
         x[worker, task] in {0, 1}
     """
     _check_size(size)
-    _require_regular(formulation)
     random_generator = random.Random(seed)
 
     def variable_id(worker: int, task: int) -> int:
@@ -690,8 +691,6 @@ def build_tsp_instance(
         x[i, t] in {0, 1}
     """
     _check_size(num_cities, minimum=2)
-    _require_regular(formulation)
-
     random_generator = random.Random(seed)
     coordinates = [
         (random_generator.random(), random_generator.random())

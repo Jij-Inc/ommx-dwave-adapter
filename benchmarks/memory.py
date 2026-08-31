@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 from common import (
     FORMULATIONS,
     INSTANCE_NAMES,
+    OPERATIONS,
     PACKAGE_VERSIONS,
-    PREPARATIONS,
     SPECIAL_CONSTRAINT_CASES,
     build_instance,
     make_benchmark_operation,
@@ -16,17 +16,15 @@ from common import (
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "operation", choices=("instance-to-model", "result-to-solution")
-    )
+    parser.add_argument("operation", choices=OPERATIONS)
     parser.add_argument("--instance", choices=INSTANCE_NAMES, default="tsp")
     parser.add_argument("--formulation", choices=FORMULATIONS, default="regular")
     parser.add_argument(
         "--special-constraints", choices=SPECIAL_CONSTRAINT_CASES, default="none"
     )
-    parser.add_argument("--preparation", choices=PREPARATIONS, default="none")
     parser.add_argument("--size", required=True, type=int)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--solver-time-limit", type=int, default=5)
     args = parser.parse_args()
 
     try:
@@ -41,7 +39,6 @@ def main() -> None:
             args.seed,
             args.formulation,
             args.special_constraints,
-            args.preparation,
         )
     except ValueError as error:
         parser.error(str(error))
@@ -50,6 +47,7 @@ def main() -> None:
         instance,
         args.instance,
         args.size,
+        args.solver_time_limit,
     )
 
     gc.collect()
@@ -85,7 +83,7 @@ def main() -> None:
         args.instance,
         args.formulation,
         args.special_constraints,
-        args.preparation,
+        "none",
         args.size,
         first_peak_memory_bytes,
         peak_memory_bytes,

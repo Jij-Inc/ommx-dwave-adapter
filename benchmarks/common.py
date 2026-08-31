@@ -1,43 +1,36 @@
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version
 from typing import Any
 
 import dimod
-from instance import (
-    build_assignment_instance,
-    build_blending_instance,
-    build_clique_instance,
-    build_facility_location_instance,
-    build_knapsack_instance,
-    build_one_hot_instance,
-    build_portfolio_cardinality_instance,
-    build_portfolio_instance,
-    build_production_instance,
-    build_tsp_instance,
-    build_unit_commitment_instance,
-)
+
+if __package__:
+    from . import instance as benchmark_instances
+else:
+    import instance as benchmark_instances
 from ommx.v1 import Instance
 
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
 
 INSTANCE_BUILDERS = {
-    "knapsack": build_knapsack_instance,
-    "one-hot": build_one_hot_instance,
-    "production": build_production_instance,
-    "blending": build_blending_instance,
-    "assignment": build_assignment_instance,
-    "facility-location": build_facility_location_instance,
-    "portfolio": build_portfolio_instance,
-    "portfolio-cardinality": build_portfolio_cardinality_instance,
-    "unit-commitment": build_unit_commitment_instance,
-    "clique": build_clique_instance,
-    "tsp": build_tsp_instance,
+    "knapsack": benchmark_instances.build_knapsack_instance,
+    "production": benchmark_instances.build_production_instance,
+    "blending": benchmark_instances.build_blending_instance,
+    "assignment": benchmark_instances.build_assignment_instance,
+    "facility-location": benchmark_instances.build_facility_location_instance,
+    "portfolio": benchmark_instances.build_portfolio_instance,
+    "portfolio-cardinality": benchmark_instances.build_portfolio_cardinality_instance,
+    "unit-commitment": benchmark_instances.build_unit_commitment_instance,
+    "clique": benchmark_instances.build_clique_instance,
+    "tsp": benchmark_instances.build_tsp_instance,
+    "one-hot-preparation": benchmark_instances.build_one_hot_preparation_instance,
 }
 INSTANCE_NAMES = tuple(INSTANCE_BUILDERS)
 FORMULATIONS = ("regular", "one-hot")
 SPECIAL_CONSTRAINT_CASES = ("none", "indicator", "sos1", "indicator-sos1")
-PREPARATIONS = ("none",)
+OPERATIONS = ("instance-to-model", "result-to-solution", "end-to-end")
 
 PACKAGE_VERSIONS = (
     version("ommx"),
@@ -61,20 +54,19 @@ def build_instance(
     seed: int,
     formulation: str,
     special_constraints: str = "none",
-    preparation: str = "none",
 ) -> Instance:
     """Select and build a benchmark Instance."""
-    if preparation != "none":
-        raise ValueError("OMMX v2 does not support Instance preparation")
-    if name == "one-hot":
-        return build_one_hot_instance(
+    if name == "one-hot-preparation":
+        return benchmark_instances.build_one_hot_preparation_instance(
             size,
             seed,
             formulation,
             special_constraints,
         )
     if special_constraints != "none":
-        raise ValueError("Special-constraint workloads are available only for one-hot")
+        raise ValueError(
+            "Special constraint counterparts are available only for one-hot-preparation"
+        )
     return INSTANCE_BUILDERS[name](size, seed, formulation)
 
 
@@ -86,7 +78,7 @@ def _build_feasible_sample(
 
     if name == "blending":
         sample.update({variable: 1.0 for variable in model.variables})
-    elif name == "one-hot":
+    elif name == "one-hot-preparation":
         sample.update({group * size: 1.0 for group in range(size)})
     elif name in ("assignment", "tsp"):
         sample.update({index * size + index: 1.0 for index in range(size)})
@@ -101,7 +93,11 @@ def _build_feasible_sample(
 
 
 def make_benchmark_operation(
-    operation: str, instance: Instance, name: str, size: int
+    operation: str,
+    instance: Instance,
+    name: str,
+    size: int,
+    solver_time_limit_s: int,
 ) -> BenchmarkOperation:
     """Prepare everything outside the measured operation."""
     if operation == "instance-to-model":
@@ -109,6 +105,22 @@ def make_benchmark_operation(
             setup=lambda: instance,
             run=lambda target: OMMXLeapHybridCQMAdapter(target).solver_input,
         )
+
+    if operation == "end-to-end":
+        token = os.environ.get("DWAVE_API_TOKEN")
+        if not token:
+            raise RuntimeError("DWAVE_API_TOKEN is required")
+        return BenchmarkOperation(
+            setup=lambda: instance,
+            run=lambda target: OMMXLeapHybridCQMAdapter.solve(
+                target,
+                token=token,
+                time_limit=solver_time_limit_s,
+            ),
+        )
+
+    if operation != "result-to-solution":
+        raise ValueError(f"Unknown operation: {operation}")
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     model = adapter.solver_input
