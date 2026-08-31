@@ -26,7 +26,6 @@ def main() -> None:
     parser.add_argument("--preparation", choices=PREPARATIONS, default="none")
     parser.add_argument("--size", required=True, type=int)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--solver-time-limit", type=int, default=5)
     args = parser.parse_args()
 
     try:
@@ -48,7 +47,6 @@ def main() -> None:
             instance,
             args.instance,
             args.size,
-            args.solver_time_limit,
             args.special_constraints,
             args.preparation,
         )

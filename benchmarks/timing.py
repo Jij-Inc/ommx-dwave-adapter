@@ -28,12 +28,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--warmup", type=int)
     parser.add_argument("--repeat", type=int)
-    parser.add_argument("--solver-time-limit", type=int, default=5)
     args = parser.parse_args()
-    default_warmup = 0 if args.operation == "end-to-end" else 3
-    default_repeat = 3 if args.operation == "end-to-end" else 20
-    warmup = args.warmup if args.warmup is not None else default_warmup
-    repeat = args.repeat if args.repeat is not None else default_repeat
+    warmup = args.warmup if args.warmup is not None else 3
+    repeat = args.repeat if args.repeat is not None else 20
     if warmup < 0:
         parser.error("--warmup must be non-negative")
     if repeat < 1:
@@ -53,7 +50,6 @@ def main() -> None:
             instance,
             args.instance,
             args.size,
-            args.solver_time_limit,
             args.special_constraints,
             args.preparation,
         )

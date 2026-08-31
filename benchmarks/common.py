@@ -1,5 +1,4 @@
 import copy
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -36,7 +35,6 @@ OPERATIONS = (
     "prepare",
     "instance-to-model",
     "result-to-solution",
-    "end-to-end",
 )
 
 PACKAGE_VERSIONS = (
@@ -122,7 +120,6 @@ def make_benchmark_operation(
     instance: Instance,
     name: str,
     size: int,
-    solver_time_limit_s: int,
     special_constraints: str,
     preparation: str,
 ) -> BenchmarkOperation:
@@ -149,28 +146,6 @@ def make_benchmark_operation(
             return prepared
 
         return BenchmarkOperation(setup=setup_preparation, run=run_preparation)
-
-    if operation == "end-to-end":
-        token = os.environ.get("DWAVE_API_TOKEN")
-        if not token:
-            raise RuntimeError("DWAVE_API_TOKEN is required")
-        if preparation == "recommended":
-            return BenchmarkOperation(
-                setup=lambda: instance,
-                run=lambda target: OMMXLeapHybridCQMAdapter.solve(
-                    target,
-                    token=token,
-                    time_limit=solver_time_limit_s,
-                ),
-            )
-        return BenchmarkOperation(
-            setup=lambda: instance,
-            run=lambda target: OMMXLeapHybridCQMAdapter.solve_without_preparation(
-                target,
-                token=token,
-                time_limit=solver_time_limit_s,
-            ),
-        )
 
     adapter_instance = (
         _prepare_instance(instance) if preparation == "recommended" else instance
