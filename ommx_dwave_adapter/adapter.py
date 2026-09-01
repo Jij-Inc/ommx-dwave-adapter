@@ -353,9 +353,13 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             elif kind == Kind.Continuous:
                 lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
                 upper_limit = _MAX_ABS_CONTINUOUS_BOUND
+            else:
+                raise AssertionError(
+                    "Unsupported decision variable kind reached after applicability "
+                    f"validation: {kind}. This may indicate an OMMX implementation "
+                    "bug; please report it to OMMX."
+                )
 
-            assert lower_limit is not None
-            assert upper_limit is not None
             if var.bound.lower < lower_limit:
                 raise OMMXDWaveAdapterError(
                     f"D-Wave CQM {str(kind).lower()} variable {var.id} has lower "
@@ -379,11 +383,19 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         expr = self._make_expr(objective)
 
-        if self.instance.sense == Instance.MAXIMIZE:
+        if self.instance.sense == Instance.MINIMIZE:
+            pass
+        elif self.instance.sense == Instance.MAXIMIZE:
             # multiply all coefficients by -1:
             # this takes all except the last element from the tuple and concatenates it
             # with the last element multiplied with -1 to get a new tuple
             expr = [term[:-1] + (-1 * term[-1],) for term in expr]
+        else:
+            raise AssertionError(
+                "Unsupported objective sense reached after applicability validation: "
+                f"{self.instance.sense}. This may indicate an OMMX implementation "
+                "bug; please report it to OMMX."
+            )
 
         # Set objective function
         self.model.set_objective(expr)
@@ -438,6 +450,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
             # Create dwave expression for the constraint
             expr = self._make_expr(constraint.function)
+
+            if constraint.equality not in _DIMOD_CONSTRAINT_SENSES:
+                raise AssertionError(
+                    "Unsupported constraint equality reached after applicability "
+                    f"validation: {constraint.equality} for constraint "
+                    f"{constraint_id}. This may indicate an OMMX implementation "
+                    "bug; please report it to OMMX."
+                )
 
             # rhs is assumed 0 by dwave
             self.model.add_constraint_from_iterable(
