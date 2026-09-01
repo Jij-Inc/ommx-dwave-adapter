@@ -40,9 +40,6 @@ _DIMOD_CONSTRAINT_SENSES: dict[Equality, DimodSense] = {
     Equality.EqualToZero: DimodSense.Eq,
     Equality.LessThanOrEqualToZero: DimodSense.Le,
 }
-_QUADRATIC_REGULAR_CONSTRAINT_DEGREE_BOUNDS = {
-    equality: DegreeBound.at_most(2) for equality in _DIMOD_CONSTRAINT_SENSES
-}
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
@@ -52,9 +49,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 label="dwave-cqm",
                 allowed_variable_kinds=set(_DIMOD_VARIABLE_TYPES),
                 objective_degree_bound=DegreeBound.at_most(2),
-                regular_constraint_degree_bounds=(
-                    _QUADRATIC_REGULAR_CONSTRAINT_DEGREE_BOUNDS
-                ),
+                regular_constraint_degree_bounds={
+                    Equality.EqualToZero: DegreeBound.at_most(2),
+                    Equality.LessThanOrEqualToZero: DegreeBound.at_most(2),
+                },
                 allows_one_hot=True,
                 allowed_senses={Sense.Minimize, Sense.Maximize},
             )
