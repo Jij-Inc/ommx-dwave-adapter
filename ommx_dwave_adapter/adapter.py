@@ -184,6 +184,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         # to use the file as a way to pass the token, so we can't necessarily
         # give an error on an empty token
 
+        # TODO: Update the diagnostics docstrings when support is implemented.
         _ = diagnostics
         adapter = cls(ommx_instance)
         model = adapter.sampler_input
