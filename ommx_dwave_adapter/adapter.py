@@ -467,6 +467,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             )
 
         for constraint_id, constraint in self.instance.constraints.items():
+            if constraint.equality not in _DIMOD_CONSTRAINT_SENSES:
+                raise AssertionError(
+                    "Unsupported constraint equality reached after applicability "
+                    f"validation: {constraint.equality} for constraint "
+                    f"{constraint_id}. This may indicate an OMMX implementation "
+                    "bug; please report it to OMMX."
+                )
+
             # Only constant case
             if constraint.function.degree() == 0:
                 if constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE).feasible:
@@ -477,14 +485,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
             # Create dwave expression for the constraint
             expr = self._make_expr(constraint.function)
-
-            if constraint.equality not in _DIMOD_CONSTRAINT_SENSES:
-                raise AssertionError(
-                    "Unsupported constraint equality reached after applicability "
-                    f"validation: {constraint.equality} for constraint "
-                    f"{constraint_id}. This may indicate an OMMX implementation "
-                    "bug; please report it to OMMX."
-                )
 
             # rhs is assumed 0 by dwave
             self.model.add_constraint_from_iterable(
