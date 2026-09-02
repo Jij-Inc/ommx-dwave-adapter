@@ -109,7 +109,7 @@ def build_one_hot_preparation_instance(
     ]
     constraints, constraint_hints = _build_one_hot_constraints(specs, formulation)
     if special_constraints != "none":
-        # Match the OMMX v3 beta3 lowering formulas used by the direct and
+        # Match the OMMX v3 beta4 lowering formulas used by the direct and
         # prepared comparison workloads.
         indicator_group_count = (
             (size + 1) // 2 if special_constraints == "indicator-sos1" else size

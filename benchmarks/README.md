@@ -69,6 +69,7 @@ OneHotグループを持つ比較基準です。OMMX v2にはfirst-classなIndic
 メモリ測定では、ウォームアップ前の初回実行と、その実行をウォームアップとした2回目のピークメモリを記録します。
 時間計測中はGCを停止します。
 クラウドsolverは使用しないため、D-Wave Leap tokenは不要です。
+`end-to-end` はD-Wave Leap tokenを必要とするため、このbenchmarkの測定対象には含めません。
 
 全推奨サイズを測定する場合のパターン数は次のとおりです。
 
