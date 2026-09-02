@@ -17,7 +17,7 @@
 | `portfolio` | Continuous | 2次 | Realの2次目的関数と予算上限 | `regular` | 50 / 100 / 200 |
 | `portfolio-cardinality` | Continuous + Binary | 2次 | Continuousの2次目的関数とBinaryの基数・連結制約 | `regular` | 50 / 100 / 200 |
 | `unit-commitment` | Integer + Binary | 2次 | Integerの2乗項とBinaryの起動・連結制約 | `regular` | 50 / 200 / 450 |
-| `clique` | Binary | 定数0 | 1次等式と2次等式制約の変換 | `regular` | Instance → Model: 50 / 100 / 200、Result → Solution: 10 / 20 / 30 |
+| `clique` | Binary | 定数0 | 1次等式と2次等式制約の変換 | `regular` | Instance → Model: 50 / 100 / 200、Result → Solution: 50 / 70 / 100 |
 | `tsp` | Binary | 2次 | 通常制約とOneHotの比較 | `regular` / `one-hot` | 10 / 20 / 30 |
 | `one-hot-preparation` | Binary | 1次 | Indicator/SOS1のPreparationとPreparation後のAdapter変換 | `one-hot` | 10 / 20 / 30 |
 
@@ -26,8 +26,8 @@
 `portfolio` と `portfolio-cardinality` では資産数、`unit-commitment` では発電機数、
 `clique` では頂点数、`one-hot-preparation` ではOneHotグループ数と各グループの変数数を表します。
 `clique` は、2次制約の変換負荷を測る `instance-to-model` では
-50 / 100 / 200、D-Waveが実行可能解を返せる規模でデコードを測る
-`result-to-solution` では 10 / 20 / 30 を使用します。
+50 / 100 / 200、解析的に構成した実行可能サンプルのdecode拡大測定では
+`result-to-solution` に 50 / 70 / 100 を使用します。
 
 制約表現は `--formulation regular` または `--formulation one-hot` で選択します。
 `one-hot` を選択できるのは `assignment`、`tsp`、`one-hot-preparation` だけです。
@@ -61,13 +61,14 @@ PreparationはコピーしたInstanceへ
 `prepare` はInstanceの生成、コピー、Policy生成を測定外とし、`Instance.prepare()`だけを測定します。
 `instance-to-model` は `preparation=recommended` の場合だけPreparationを測定外で済ませ、Adapterの生成だけを測定します。
 `result-to-solution` は必要なPreparationとローカルdimod SampleSet生成を測定外とし、`adapter.decode(sampleset)`だけを測定します。
+Decodeは1サンプルだけを含むSampleSetで測定します。solver結果を使うFixstars版とは
+サンプル数や付随情報が異なるため、絶対値をadapter間で直接比較する用途には使いません。
 時間測定では、プロセス内でウォームアップ前の初回実行時間と中央値を記録します。
 既定値はwarmup 3回・repeat 20回です。
 実際の値はCSVの `warmup` / `repeat` 列にも記録されます。
 メモリ測定では、ウォームアップ前の初回実行と、その実行をウォームアップとした2回目のピークメモリを記録します。
 時間計測中はGCを停止します。
-クラウドsolverは使用しないため、D-Wave Leap tokenは不要です。
-`end-to-end` はD-Wave Leap tokenを必要とするため、このbenchmarkの測定対象には含めません。
+`end-to-end` はD-Wave Leap tokenを必要とするため対象外とし、すべての測定をtoken不要のローカル処理に限定します。
 
 全推奨サイズを測定する場合のパターン数は次のとおりです。
 `one-hot-preparation` の `none` はOneHotだけを持つbaselineであり、
@@ -123,6 +124,12 @@ done
 ```
 
 ```console
+for size in 50 70 100; do
+  uv run --frozen python benchmarks/timing.py result-to-solution \
+    --instance clique --formulation regular --size "$size" \
+    | tee "benchmark_results/v3-clique-result-to-solution-timing-${size}.csv"
+done
+
 for size in 10 20 30; do
   uv run --frozen python benchmarks/timing.py result-to-solution \
     --instance tsp --formulation regular --size "$size" \
@@ -178,4 +185,20 @@ uv run --frozen --with memray python benchmarks/memory.py instance-to-model \
   --instance one-hot-preparation --formulation one-hot \
   --special-constraints indicator-sos1 --preparation recommended --size 20
 
+uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
+  --instance clique --formulation regular --size 70
+
+uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
+  --instance tsp --formulation regular --size 20
+
+uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
+  --instance tsp --formulation one-hot --size 20
+
+uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
+  --instance one-hot-preparation --formulation one-hot \
+  --special-constraints indicator-sos1 --preparation none --size 20
+
+uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
+  --instance one-hot-preparation --formulation one-hot \
+  --special-constraints indicator-sos1 --preparation recommended --size 20
 ```
