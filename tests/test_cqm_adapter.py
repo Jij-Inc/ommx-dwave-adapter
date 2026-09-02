@@ -654,6 +654,15 @@ def test_overlapping_one_hot_constraints_use_greedy_selection():
     assert instance.removed_one_hot_constraints == {}
     assert instance.constraints == {}
     assert set(model.discrete) == {"onehot_0", "onehot_2"}
+    expected_discrete_constraints = {
+        "onehot_0": {0: 1, 1: 1, 2: 1, 3: 1},
+        "onehot_2": {4: 1, 6: 1},
+    }
+    for label, variables in expected_discrete_constraints.items():
+        assert model.constraints[label].sense == Sense.Eq
+        assert model.constraints[label].lhs.linear == variables
+        assert model.constraints[label].rhs == 1
+
     assert model.constraints["onehot_1"].sense == Sense.Eq
     assert model.constraints["onehot_1"].lhs.linear == {0: 1, 4: 1, 5: 1}
     assert model.constraints["onehot_1"].rhs == 1
