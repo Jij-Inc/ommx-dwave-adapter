@@ -181,7 +181,7 @@ def test_instance_to_cqm_model():
         )
         for i in range(N)
     ]
-    constraints = Function(sum(w[i] * x[i] for i in range(N))) <= W
+    constraint = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
