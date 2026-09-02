@@ -54,7 +54,7 @@ def main() -> None:
     print(
         "operation,instance,formulation,special_constraints,preparation,size,"
         "warmup,repeat,first_seconds,median_seconds,ommx_version,dimod_version,"
-        "dwave_system_version,adapter_version"
+        "adapter_version"
     )
 
     gc_was_enabled = gc.isenabled()
