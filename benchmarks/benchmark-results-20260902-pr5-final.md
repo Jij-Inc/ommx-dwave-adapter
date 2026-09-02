@@ -1,4 +1,4 @@
-+# Adapter conversion benchmark results
+# Adapter conversion benchmark results
 
 2026年9月2日に、D-Wave PR #5の最終Adapter実装を取り込んだ状態で実施した
 OMMX v2/v3ローカル分解測定の結果です。
@@ -59,6 +59,7 @@ preparedのModel変換、Decodeの各中央値を合算した値です。
 - seed：0
 - solver：未使用。決定的な実行可能解からdimod SampleSetをローカル生成
 - SampleSet：各ケース1サンプル
+- Fixstars版はsolver結果をdecodeするため、Result → Solutionの絶対値はadapter間で直接比較しない
 - v2：OMMX 2.6.1 / dimod 0.12.20 / D-Wave System 1.29.1 /
   Adapter `0.1.2.dev10+gf2984945e.d20260902`
 - v3：OMMX 3.0.0b4 / dimod 0.12.20 / D-Wave System 1.29.1 /

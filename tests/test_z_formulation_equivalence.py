@@ -25,3 +25,12 @@ def test_one_hot_formulation_converts_to_the_regular_model(build_instance):
     regular_model = OMMXLeapHybridCQMAdapter(regular).solver_input
     one_hot_model = OMMXLeapHybridCQMAdapter(one_hot).solver_input
     assert regular_model.is_equal(one_hot_model)
+    assert set(regular_model.variables) == set(one_hot_model.variables)
+    for variable in regular_model.variables:
+        assert regular_model.vartype(variable) == one_hot_model.vartype(variable)
+        assert regular_model.lower_bound(variable) == one_hot_model.lower_bound(
+            variable
+        )
+        assert regular_model.upper_bound(variable) == one_hot_model.upper_bound(
+            variable
+        )

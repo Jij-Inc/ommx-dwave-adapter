@@ -31,6 +31,14 @@ FORMULATIONS = ("regular", "one-hot")
 SPECIAL_CONSTRAINT_CASES = ("none", "indicator", "sos1", "indicator-sos1")
 OPERATIONS = ("instance-to-model", "result-to-solution")
 
+_ALL_ZERO_SAMPLE_INSTANCES = {
+    "knapsack",
+    "production",
+    "facility-location",
+    "portfolio",
+    "portfolio-cardinality",
+}
+
 PACKAGE_VERSIONS = (
     version("ommx"),
     version("dimod"),
@@ -66,7 +74,10 @@ def build_instance(
         raise ValueError(
             "Special constraint counterparts are available only for one-hot-preparation"
         )
-    return INSTANCE_BUILDERS[name](size, seed, formulation)
+    builder = INSTANCE_BUILDERS.get(name)
+    if builder is None:
+        raise ValueError(f"Unknown benchmark instance: {name}")
+    return builder(size, seed, formulation)
 
 
 def _build_feasible_sample(
@@ -75,7 +86,9 @@ def _build_feasible_sample(
     """Build a deterministic feasible sample for a benchmark model."""
     sample = {variable: 0.0 for variable in model.variables}
 
-    if name == "blending":
+    if name in _ALL_ZERO_SAMPLE_INSTANCES:
+        pass
+    elif name == "blending":
         sample.update({variable: 1.0 for variable in model.variables})
     elif name == "one-hot-preparation":
         sample.update({group * size: 1.0 for group in range(size)})
@@ -87,6 +100,13 @@ def _build_feasible_sample(
     elif name == "clique":
         clique_size = (size + 1) // 2
         sample.update({vertex: 1.0 for vertex in range(size - clique_size, size)})
+    else:
+        raise ValueError(f"No deterministic benchmark sample for instance: {name}")
+
+    if set(sample) != set(model.variables):
+        raise AssertionError(f"Benchmark sample variables do not match {name} model")
+    if not model.check_feasible(sample):  # pyright: ignore[reportArgumentType]
+        raise AssertionError(f"Benchmark sample is not feasible for {name} model")
 
     return sample
 

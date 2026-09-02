@@ -60,6 +60,11 @@ def build_one_hot_preparation_instance(
 ) -> Instance:
     """Build an OMMX v2 counterpart of a prepared v3 benchmark Instance.
 
+    OMMX v2 cannot represent first-class Indicator/SOS1 constraints or
+    Preparation history. ``special_constraints`` therefore materializes the
+    regular constraints produced by OMMX v3 beta4 lowering so the v2 and v3
+    benchmark workloads have the same active mathematical constraints.
+
     Minimize:
         sum_{group, choice} cost[group, choice] * x[group, choice]
     Subject to:
