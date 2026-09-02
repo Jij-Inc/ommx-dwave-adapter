@@ -945,7 +945,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dwave-system", specifier = ">=1.29.1" },
+    { name = "dwave-system", specifier = ">=1.29.1,<2.0.0" },
     { name = "ommx", specifier = ">=3.0.0b4,<4.0.0" },
     { name = "pyright", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'" },

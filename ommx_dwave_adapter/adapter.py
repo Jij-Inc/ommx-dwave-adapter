@@ -408,6 +408,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def _set_objective(self):
         objective = self.instance.objective
 
+        objective_degree = objective.degree()
+        if objective_degree >= 3:
+            raise AssertionError(
+                "Unsupported objective degree reached after applicability validation: "
+                f"{objective_degree}. This may indicate an OMMX implementation bug; "
+                "please report it to OMMX."
+            )
+
         expr = self._make_expr(objective)
 
         if self.instance.sense == Instance.MINIMIZE:
@@ -475,8 +483,17 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                     "bug; please report it to OMMX."
                 )
 
+            constraint_degree = constraint.function.degree()
+            if constraint_degree >= 3:
+                raise AssertionError(
+                    "Unsupported constraint degree reached after applicability "
+                    f"validation: {constraint_degree} for constraint {constraint_id}. "
+                    "This may indicate an OMMX implementation bug; please report it "
+                    "to OMMX."
+                )
+
             # Only constant case
-            if constraint.function.degree() == 0:
+            if constraint_degree == 0:
                 if constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE).feasible:
                     continue
                 raise OMMXDWaveAdapterError(
