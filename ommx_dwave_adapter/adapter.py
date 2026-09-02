@@ -40,9 +40,6 @@ _DIMOD_CONSTRAINT_SENSES: dict[Equality, DimodSense] = {
     Equality.EqualToZero: DimodSense.Eq,
     Equality.LessThanOrEqualToZero: DimodSense.Le,
 }
-_QUADRATIC_REGULAR_CONSTRAINT_DEGREE_BOUNDS = {
-    equality: DegreeBound.at_most(2) for equality in _DIMOD_CONSTRAINT_SENSES
-}
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
@@ -52,9 +49,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 label="dwave-cqm",
                 allowed_variable_kinds=set(_DIMOD_VARIABLE_TYPES),
                 objective_degree_bound=DegreeBound.at_most(2),
-                regular_constraint_degree_bounds=(
-                    _QUADRATIC_REGULAR_CONSTRAINT_DEGREE_BOUNDS
-                ),
+                regular_constraint_degree_bounds={
+                    Equality.EqualToZero: DegreeBound.at_most(2),
+                    Equality.LessThanOrEqualToZero: DegreeBound.at_most(2),
+                },
                 allows_one_hot=True,
                 allowed_senses={Sense.Minimize, Sense.Maximize},
             )
@@ -104,8 +102,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the samples as an ommx.SampleSet.
 
-        The input instance is not modified; an isolated copy is prepared with the
-        recommended D-Wave CQM policy before preparation-free execution.
+        ``diagnostics`` are not available through this Adapter.
+        The reserved ``diagnostics`` argument is accepted for compatibility with
+        the OMMX SamplerAdapter interface.
 
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
@@ -115,7 +114,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
-        :param diagnostics: Reserved diagnostics sink; currently unused.
+        :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
+          currently unused.
 
         Example:
         =========
@@ -161,17 +161,30 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     ) -> SampleSet:
         """Sample an exact D-Wave CQM Adapter input without preparing it.
 
-        :param ommx_instance: An ommx.Instance satisfying ``INPUT_CLASS``.
+        Use this method when the input instance has already been prepared,
+        possibly with a custom policy, or already belongs to ``INPUT_CLASS``.
+
+        ``diagnostics`` are not available through this Adapter.
+        The reserved ``diagnostics`` argument is accepted for compatibility with
+        the OMMX SamplerAdapter interface.
+
+        **NOTE** The ``token`` must be specified either through the optional
+          parameter or the D-Wave config file. Refer to D-Wave documentation for
+          more info.
+
+        :param ommx_instance: The exact D-Wave CQM Adapter input to sample.
         :param token: Token for instantiating the D-Wave sampler.
         :param time_limit: Maximum solver time in seconds.
         :param label: Optional label to tag the problem with.
-        :param diagnostics: Reserved diagnostics sink; currently unused.
+        :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
+          currently unused.
         """
         # Dwave appears to be able to read configuration from a config file
         # automatically, and this apparently includes the token. Users may want
         # to use the file as a way to pass the token, so we can't necessarily
         # give an error on an empty token
 
+        # TODO: Update the diagnostics docstrings when support is implemented.
         _ = diagnostics
         adapter = cls(ommx_instance)
         model = adapter.sampler_input
@@ -202,8 +215,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
         returning the best feasible solution as an ommx.Solution.
 
-        The input instance is not modified; an isolated copy is prepared with the
-        recommended D-Wave CQM policy before preparation-free execution.
+        ``diagnostics`` are not available through this Adapter.
+        The reserved ``diagnostics`` argument is accepted for compatibility with
+        the OMMX SamplerAdapter interface.
 
         **NOTE** The `token` must be specified either through the optional
           parameter or the DWave config file. Refer to DWave documentation for
@@ -213,7 +227,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
         :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
         :param label: Optional label to tag the problem with.
-        :param diagnostics: Reserved diagnostics sink; currently unused.
+        :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
+          currently unused.
 
         Example:
         =========
@@ -257,13 +272,25 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         label: Optional[str] = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> Solution:
-        """Return the best feasible result without preparing the input.
+        """Solve an exact D-Wave CQM Adapter input without preparing it.
 
-        :param ommx_instance: An ommx.Instance satisfying ``INPUT_CLASS``.
+        Use this method when the input instance has already been prepared,
+        possibly with a custom policy, or already belongs to ``INPUT_CLASS``.
+
+        ``diagnostics`` are not available through this Adapter.
+        The reserved ``diagnostics`` argument is accepted for compatibility with
+        the OMMX SamplerAdapter interface.
+
+        **NOTE** The ``token`` must be specified either through the optional
+          parameter or the D-Wave config file. Refer to D-Wave documentation for
+          more info.
+
+        :param ommx_instance: The exact D-Wave CQM Adapter input to solve.
         :param token: Token for instantiating the D-Wave sampler.
         :param time_limit: Maximum solver time in seconds.
         :param label: Optional label to tag the problem with.
-        :param diagnostics: Reserved diagnostics sink; currently unused.
+        :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
+          currently unused.
         """
         return cls.sample_without_preparation(
             ommx_instance,
@@ -353,9 +380,13 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             elif kind == Kind.Continuous:
                 lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
                 upper_limit = _MAX_ABS_CONTINUOUS_BOUND
+            else:
+                raise AssertionError(
+                    "Unsupported decision variable kind reached after applicability "
+                    f"validation: {kind}. This may indicate an OMMX implementation "
+                    "bug; please report it to OMMX."
+                )
 
-            assert lower_limit is not None
-            assert upper_limit is not None
             if var.bound.lower < lower_limit:
                 raise OMMXDWaveAdapterError(
                     f"D-Wave CQM {str(kind).lower()} variable {var.id} has lower "
@@ -379,11 +410,19 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         expr = self._make_expr(objective)
 
-        if self.instance.sense == Instance.MAXIMIZE:
+        if self.instance.sense == Instance.MINIMIZE:
+            pass
+        elif self.instance.sense == Instance.MAXIMIZE:
             # multiply all coefficients by -1:
             # this takes all except the last element from the tuple and concatenates it
             # with the last element multiplied with -1 to get a new tuple
             expr = [term[:-1] + (-1 * term[-1],) for term in expr]
+        else:
+            raise AssertionError(
+                "Unsupported objective sense reached after applicability validation: "
+                f"{self.instance.sense}. This may indicate an OMMX implementation "
+                "bug; please report it to OMMX."
+            )
 
         # Set objective function
         self.model.set_objective(expr)
@@ -428,6 +467,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             )
 
         for constraint_id, constraint in self.instance.constraints.items():
+            if constraint.equality not in _DIMOD_CONSTRAINT_SENSES:
+                raise AssertionError(
+                    "Unsupported constraint equality reached after applicability "
+                    f"validation: {constraint.equality} for constraint "
+                    f"{constraint_id}. This may indicate an OMMX implementation "
+                    "bug; please report it to OMMX."
+                )
+
             # Only constant case
             if constraint.function.degree() == 0:
                 if constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE).feasible:
