@@ -48,7 +48,6 @@ _ALL_ZERO_SAMPLE_INSTANCES = {
 PACKAGE_VERSIONS = (
     version("ommx"),
     version("dimod"),
-    version("dwave-system"),
     version("ommx_dwave_adapter"),
 )
 

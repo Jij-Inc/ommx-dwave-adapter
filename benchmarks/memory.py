@@ -79,7 +79,7 @@ def main() -> None:
     print(
         "operation,instance,formulation,special_constraints,preparation,size,"
         "first_peak_memory_bytes,peak_memory_bytes,ommx_version,dimod_version,"
-        "dwave_system_version,adapter_version"
+        "adapter_version"
     )
     print(
         args.operation,

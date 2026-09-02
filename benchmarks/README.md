@@ -17,9 +17,9 @@
 | `portfolio` | Continuous | 2次 | Realの2次目的関数と予算上限 | `regular` | 50 / 100 / 200 |
 | `portfolio-cardinality` | Continuous + Binary | 2次 | Continuousの2次目的関数とBinaryの基数・連結制約 | `regular` | 50 / 100 / 200 |
 | `unit-commitment` | Integer + Binary | 2次 | Integerの2乗項とBinaryの起動・連結制約 | `regular` | 50 / 200 / 450 |
-| `clique` | Binary | 定数0 | 1次等式と2次等式制約の変換 | `regular` | Instance → Model: 50 / 100 / 200、Result → Solution: 50 / 70 / 100 |
+| `clique` | Binary | 定数0 | 1次等式と2次等式制約の変換 | `regular` | Instance → Model: 50 / 100 / 200、Result → Solution: 10 / 20 / 30 / 50 / 70 / 100 |
 | `tsp` | Binary | 2次 | 通常制約とOneHotの比較 | `regular` / `one-hot` | 10 / 20 / 30 |
-| `one-hot-preparation` | Binary | 1次 | Indicator/SOS1のPreparationとPreparation後のAdapter変換 | `one-hot` | 10 / 20 / 30 |
+| `one-hot-preparation` | Binary | 1次 | Indicator/SOS1のPreparationとPreparation後のAdapter変換 | `one-hot` | Instance → Model / Prepare: 10 / 20 / 30、Result → Solution: 10 / 20 / 30 / 50 / 70 / 100 |
 
 `size` は `knapsack`、`production`、`blending` では変数数、
 `assignment` と `tsp` では一辺の要素数、`facility-location` では施設数と顧客数、
@@ -27,7 +27,9 @@
 `clique` では頂点数、`one-hot-preparation` ではOneHotグループ数と各グループの変数数を表します。
 `clique` は、2次制約の変換負荷を測る `instance-to-model` では
 50 / 100 / 200、解析的に構成した実行可能サンプルのdecode拡大測定では
-`result-to-solution` に 50 / 70 / 100 を使用します。
+`result-to-solution` に 10 / 20 / 30 / 50 / 70 / 100 を使用します。
+`one-hot-preparation` の `result-to-solution` も、通常サイズの 10 / 20 / 30 に加え、
+decode拡大測定として 50 / 70 / 100 を使用します。
 
 制約表現は `--formulation regular` または `--formulation one-hot` で選択します。
 `one-hot` を選択できるのは `assignment`、`tsp`、`one-hot-preparation` だけです。
@@ -77,9 +79,9 @@ Decodeは1サンプルだけを含むSampleSetで測定します。solver結果�
 | Operation | 通常問題 | `one-hot-preparation` | 合計 |
 | --- | ---: | ---: | ---: |
 | `instance-to-model` | 36 | 21 | 57 |
-| `result-to-solution` | 36 | 21 | 57 |
+| `result-to-solution` | 39 | 42 | 81 |
 | `prepare` | 0 | 9 | 9 |
-| **合計** | **72** | **51** | **123** |
+| **合計** | **75** | **72** | **147** |
 
 ## 処理時間
 
@@ -124,7 +126,7 @@ done
 ```
 
 ```console
-for size in 50 70 100; do
+for size in 10 20 30 50 70 100; do
   uv run --frozen python benchmarks/timing.py result-to-solution \
     --instance clique --formulation regular --size "$size" \
     | tee "benchmark_results/v3-clique-result-to-solution-timing-${size}.csv"
@@ -142,7 +144,7 @@ for size in 10 20 30; do
     | tee "benchmark_results/v3-one-hot-result-to-solution-timing-${size}.csv"
 done
 
-for size in 10 20 30; do
+for size in 10 20 30 50 70 100; do
   uv run --frozen python benchmarks/timing.py result-to-solution \
     --instance one-hot-preparation --formulation one-hot \
     --special-constraints none --preparation none --size "$size" \
@@ -150,7 +152,7 @@ for size in 10 20 30; do
 done
 
 for special_constraints in indicator sos1 indicator-sos1; do
-  for size in 10 20 30; do
+  for size in 10 20 30 50 70 100; do
     for preparation in none recommended; do
       uv run --frozen python benchmarks/timing.py result-to-solution \
         --instance one-hot-preparation --formulation one-hot \
@@ -196,9 +198,9 @@ uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
 
 uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
   --instance one-hot-preparation --formulation one-hot \
-  --special-constraints indicator-sos1 --preparation none --size 20
+  --special-constraints indicator-sos1 --preparation none --size 70
 
 uv run --frozen --with memray python benchmarks/memory.py result-to-solution \
   --instance one-hot-preparation --formulation one-hot \
-  --special-constraints indicator-sos1 --preparation recommended --size 20
+  --special-constraints indicator-sos1 --preparation recommended --size 70
 ```

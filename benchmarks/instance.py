@@ -134,7 +134,7 @@ def build_one_hot_preparation_instance(
         return "none"
 
     if special_constraints != "none" and preparation == "none":
-        # Match OMMX beta4 lowering exactly so direct and prepared Instances
+        # Match OMMX lowering exactly so direct and prepared Instances
         # differ only in removed constraints and provenance.
         constraints = {
             group: Constraint(
