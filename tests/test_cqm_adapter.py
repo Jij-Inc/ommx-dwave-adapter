@@ -185,7 +185,7 @@ def test_instance_to_cqm_model():
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints={0: constraints},
+        constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -329,11 +329,11 @@ def test_encode_quadratic():
     y = DecisionVariable.integer(id=1, name="y", lower=10, upper=20)
     z = DecisionVariable.integer(id=2, name="z", lower=10, upper=20)
 
-    constraints = x + y * z >= 10
+    constraint = x + y * z >= 10
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x * y + z,
-        constraints={0: constraints},
+        constraints={0: constraint},
         sense=Instance.MINIMIZE,
     )
 
@@ -364,11 +364,11 @@ def test_decode():
         )
         for i in range(N)
     ]
-    constraints = Function(sum(w[i] * x[i] for i in range(N))) <= W
+    constraint = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints={0: constraints},
+        constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
