@@ -81,30 +81,54 @@ def build_instance(
 
 
 def _build_feasible_sample(
-    name: str, size: int, model: dimod.ConstrainedQuadraticModel
+    name: str, instance: Instance, model: dimod.ConstrainedQuadraticModel
 ) -> dict[int, float]:
-    """Build a deterministic feasible sample for a benchmark model."""
-    sample = {variable: 0.0 for variable in model.variables}
+    """Build a deterministic feasible sample from Instance variable metadata."""
+    variables = {variable.id: variable for variable in instance.decision_variables}
+    if set(variables) != set(model.variables):
+        raise AssertionError(f"Benchmark Instance variables do not match {name} model")
+
+    sample = {variable_id: 0.0 for variable_id in variables}
 
     if name in _ALL_ZERO_SAMPLE_INSTANCES:
         pass
     elif name == "blending":
-        sample.update({variable: 1.0 for variable in model.variables})
+        sample.update({variable_id: 1.0 for variable_id in variables})
     elif name == "one-hot-preparation":
-        sample.update({group * size: 1.0 for group in range(size)})
+        sample.update(
+            {
+                variable_id: 1.0
+                for variable_id, variable in variables.items()
+                if variable.name == "x" and variable.subscripts[1] == 0
+            }
+        )
     elif name in ("assignment", "tsp"):
-        sample.update({index * size + index: 1.0 for index in range(size)})
+        sample.update(
+            {
+                variable_id: 1.0
+                for variable_id, variable in variables.items()
+                if variable.name == "x"
+                and variable.subscripts[0] == variable.subscripts[1]
+            }
+        )
     elif name == "unit-commitment":
-        sample.update({generator: 1.0 for generator in range(size)})
-        sample.update({size + generator: 5.0 for generator in range(size)})
+        sample.update(
+            {
+                variable_id: 1.0 if variable.name == "u" else 5.0
+                for variable_id, variable in variables.items()
+            }
+        )
     elif name == "clique":
-        clique_size = (size + 1) // 2
-        sample.update({vertex: 1.0 for vertex in range(size - clique_size, size)})
+        ordered_vertices = sorted(
+            variables.items(), key=lambda item: item[1].subscripts[0]
+        )
+        clique_size = (len(ordered_vertices) + 1) // 2
+        sample.update(
+            {variable_id: 1.0 for variable_id, _ in ordered_vertices[-clique_size:]}
+        )
     else:
         raise ValueError(f"No deterministic benchmark sample for instance: {name}")
 
-    if set(sample) != set(model.variables):
-        raise AssertionError(f"Benchmark sample variables do not match {name} model")
     if not model.check_feasible(sample):  # pyright: ignore[reportArgumentType]
         raise AssertionError(f"Benchmark sample is not feasible for {name} model")
 
@@ -129,7 +153,7 @@ def make_benchmark_operation(
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     model = adapter.solver_input
-    sample = _build_feasible_sample(name, size, model)
+    sample = _build_feasible_sample(name, instance, model)
     sampleset = dimod.SampleSet.from_samples_cqm(sample, model)
     return BenchmarkOperation(
         setup=lambda: sampleset,

@@ -31,7 +31,7 @@ def test_deterministic_sample_matches_benchmark_model(name, formulation):
     instance = build_instance(name, size, 0, formulation)
     model = OMMXLeapHybridCQMAdapter(instance).solver_input
 
-    sample = _build_feasible_sample(name, size, model)
+    sample = _build_feasible_sample(name, instance, model)
 
     assert set(sample) == set(model.variables)
     assert model.check_feasible(sample)  # pyright: ignore[reportArgumentType]
@@ -74,4 +74,4 @@ def test_unknown_instance_name_is_rejected():
     instance = build_instance("knapsack", 4, 0, "regular")
     model = OMMXLeapHybridCQMAdapter(instance).solver_input
     with pytest.raises(ValueError, match="No deterministic benchmark sample"):
-        _build_feasible_sample("unknown", 4, model)
+        _build_feasible_sample("unknown", instance, model)
