@@ -3,13 +3,13 @@ import copy
 from ommx.adapter import DiagnosticsSink, SamplerAdapter
 from ommx import (
     DecisionVariable,
-    DegreeBound,
     Equality,
     Function,
     Instance,
     InstanceClass,
     InstanceClassClause,
     Kind,
+    PolynomialRequirement,
     PreparationPolicy,
     SampleSet,
     Sense,
@@ -49,10 +49,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             InstanceClassClause(
                 label="dwave-cqm",
                 allowed_variable_kinds=set(_DIMOD_VARIABLE_TYPES),
-                objective_degree_bound=DegreeBound.at_most(2),
-                regular_constraint_degree_bounds={
-                    Equality.EqualToZero: DegreeBound.at_most(2),
-                    Equality.LessThanOrEqualToZero: DegreeBound.at_most(2),
+                objective_polynomial_requirement=PolynomialRequirement.at_most(2),
+                regular_constraint_polynomial_requirements={
+                    Equality.EqualToZero: PolynomialRequirement.at_most(2),
+                    Equality.LessThanOrEqualToZero: PolynomialRequirement.at_most(2),
                 },
                 allows_one_hot=True,
                 allowed_senses={Sense.Minimize, Sense.Maximize},
@@ -412,6 +412,12 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         objective = self.instance.objective
 
         objective_degree = objective.degree()
+        if objective_degree is None:
+            raise AssertionError(
+                "Non-polynomial objective reached after applicability validation. "
+                "This may indicate an OMMX implementation bug; please report it to "
+                "OMMX."
+            )
         if objective_degree >= 3:
             raise AssertionError(
                 "Unsupported objective degree reached after applicability validation: "
@@ -487,6 +493,12 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 )
 
             constraint_degree = constraint.function.degree()
+            if constraint_degree is None:
+                raise AssertionError(
+                    "Non-polynomial constraint reached after applicability validation: "
+                    f"constraint {constraint_id}. This may indicate an OMMX "
+                    "implementation bug; please report it to OMMX."
+                )
             if constraint_degree >= 3:
                 raise AssertionError(
                     "Unsupported constraint degree reached after applicability "

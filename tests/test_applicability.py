@@ -2,11 +2,11 @@ import pytest
 
 from ommx import (
     DecisionVariable,
-    DegreeBound,
     Instance,
     InstanceClassMismatch,
     Kind,
     OneHotConstraint,
+    PolynomialRequirement,
     Sense,
     Sos1Constraint,
 )
@@ -74,7 +74,7 @@ def test_error_on_unsupported_function():
     mismatch = mismatches[0]
     assert isinstance(mismatch, InstanceClassMismatch.ObjectiveDegreeExceedsBound)
     assert mismatch.actual_degree == 3
-    assert mismatch.bound == DegreeBound.at_most(2)
+    assert mismatch.bound == PolynomialRequirement.at_most(2)
 
 
 def test_error_on_unsupported_constraint():
@@ -96,7 +96,7 @@ def test_error_on_unsupported_constraint():
         mismatch, InstanceClassMismatch.RegularConstraintDegreeExceedsBound
     )
     assert mismatch.actual_degrees == {7: 3}
-    assert mismatch.bound == DegreeBound.at_most(2)
+    assert mismatch.bound == PolynomialRequirement.at_most(2)
 
 
 def test_asserts_if_unsupported_objective_reaches_conversion(

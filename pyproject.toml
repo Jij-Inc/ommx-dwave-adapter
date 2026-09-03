@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "ommx>=3.0.0b4,<4.0.0",
+    "ommx>=3.0.0b5,<4.0.0",
     "dwave-system>=1.29.1,<2.0.0",
 ]
 
