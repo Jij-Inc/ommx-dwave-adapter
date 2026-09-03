@@ -354,8 +354,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
     def _set_decision_variables(self):
         for var in self.instance.used_decision_variables:
-            lower_limit = None
-            upper_limit = None
             if var.kind == DecisionVariable.BINARY:
                 kind = Kind.Binary
                 # dimod ignores bounds passed to add_variable for binary variables,
