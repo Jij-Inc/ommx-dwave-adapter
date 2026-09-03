@@ -1,14 +1,19 @@
 import copy
+from typing import ClassVar
 
-from ommx.adapter import DiagnosticsSink, SamplerAdapter
+import dimod
+from dimod import ConstrainedQuadraticModel
+from dimod.sym import Sense as DimodSense
+from dwave.system import LeapHybridCQMSampler
 from ommx import (
-    DegreeBound,
+    DecisionVariable,
     Equality,
     Function,
     Instance,
     InstanceClass,
     InstanceClassClause,
     Kind,
+    PolynomialRequirement,
     PreparationPolicy,
     SampleSet,
     Sense,
@@ -16,13 +21,7 @@ from ommx import (
     SpecialConstraintKind,
     SpecialConstraintPreparation,
 )
-
-import dimod
-from dimod import ConstrainedQuadraticModel
-from dimod.sym import Sense as DimodSense
-from dimod.typing import VartypeLike
-from dwave.system import LeapHybridCQMSampler
-from typing import ClassVar, Optional
+from ommx.adapter import DiagnosticsSink, SamplerAdapter
 
 from .exception import OMMXDWaveAdapterError
 
@@ -31,11 +30,6 @@ ABSOLUTE_TOLERANCE = 1e-6
 _MAX_ABS_INTEGER_BOUND = 2**53 - 1
 _MAX_ABS_CONTINUOUS_BOUND = 1e30
 
-_DIMOD_VARIABLE_TYPES: dict[Kind, VartypeLike] = {
-    Kind.Binary: dimod.BINARY,
-    Kind.Integer: dimod.INTEGER,
-    Kind.Continuous: dimod.REAL,
-}
 _DIMOD_CONSTRAINT_SENSES: dict[Equality, DimodSense] = {
     Equality.EqualToZero: DimodSense.Eq,
     Equality.LessThanOrEqualToZero: DimodSense.Le,
@@ -47,11 +41,15 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         [
             InstanceClassClause(
                 label="dwave-cqm",
-                allowed_variable_kinds=set(_DIMOD_VARIABLE_TYPES),
-                objective_degree_bound=DegreeBound.at_most(2),
-                regular_constraint_degree_bounds={
-                    Equality.EqualToZero: DegreeBound.at_most(2),
-                    Equality.LessThanOrEqualToZero: DegreeBound.at_most(2),
+                allowed_variable_kinds={
+                    Kind.Binary,
+                    Kind.Integer,
+                    Kind.Continuous,
+                },
+                objective_polynomial_requirement=PolynomialRequirement.at_most(2),
+                regular_constraint_polynomial_requirements={
+                    Equality.EqualToZero: PolynomialRequirement.at_most(2),
+                    Equality.LessThanOrEqualToZero: PolynomialRequirement.at_most(2),
                 },
                 allows_one_hot=True,
                 allowed_senses={Sense.Minimize, Sense.Maximize},
@@ -94,9 +92,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> SampleSet:
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
@@ -124,15 +122,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable
+            >>> from ommx import Instance
             >>>
-            >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
-            >>> ommx_instance = Instance.from_components(
-            ...     decision_variables=[x1],
-            ...     objective=x1,
-            ...     constraints={},
-            ...     sense=Instance.MINIMIZE,
-            ... )
+            >>> ommx_instance = Instance.minimize()
+            >>> x1 = ommx_instance.new_integer("x1", lower=0, upper=5)
+            >>> ommx_instance.objective = x1
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> sample_set = OMMXLeapHybridCQMAdapter.sample(ommx_instance, token=token) # doctest: +SKIP
         """
@@ -154,9 +148,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> SampleSet:
         """Sample an exact D-Wave CQM Adapter input without preparing it.
@@ -207,9 +201,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> Solution:
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
@@ -237,15 +231,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable
+            >>> from ommx import Instance
             >>>
-            >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
-            >>> ommx_instance = Instance.from_components(
-            ...     decision_variables=[x1],
-            ...     objective=x1,
-            ...     constraints={},
-            ...     sense=Instance.MINIMIZE,
-            ... )
+            >>> ommx_instance = Instance.minimize()
+            >>> x1 = ommx_instance.new_integer("x1", lower=0, upper=5)
+            >>> ommx_instance.objective = x1
             >>> token = "YOUR API TOKEN" # Set your API token
             >>> solution = OMMXLeapHybridCQMAdapter.solve(ommx_instance, token=token) # doctest: +SKIP
         """
@@ -267,9 +257,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> Solution:
         """Solve an exact D-Wave CQM Adapter input without preparing it.
@@ -329,15 +319,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         .. doctest::
 
             >>> from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-            >>> from ommx import Instance, DecisionVariable
+            >>> from ommx import Instance
             >>> from dwave.system import LeapHybridCQMSampler
-            >>> x1 = DecisionVariable.integer(1, lower=0, upper=5)
-            >>> ommx_instance = Instance.from_components(
-            ...     decision_variables=[x1],
-            ...     objective=x1,
-            ...     constraints={},
-            ...     sense=Instance.MINIMIZE,
-            ... )
+            >>> ommx_instance = Instance.minimize()
+            >>> x1 = ommx_instance.new_integer("x1", lower=0, upper=5)
+            >>> ommx_instance.objective = x1
             >>>
             >>> adapter = OMMXLeapHybridCQMAdapter(ommx_instance)
             >>> model = adapter.sampler_input # obtain dimod.ConstrainedQuadraticModel
@@ -366,40 +352,43 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
     def _set_decision_variables(self):
         for var in self.instance.used_decision_variables:
-            kind = Kind.from_pb(var.kind)
-            lower_limit = None
-            upper_limit = None
-            if kind == Kind.Binary:
+            if var.kind == DecisionVariable.BINARY:
+                kind = dimod.BINARY
+                kind_name = "binary"
                 # dimod ignores bounds passed to add_variable for binary variables,
                 # but keep explicit limits here for consistency with the other kinds.
                 lower_limit = 0
                 upper_limit = 1
-            elif kind == Kind.Integer:
+            elif var.kind == DecisionVariable.INTEGER:
+                kind = dimod.INTEGER
+                kind_name = "integer"
                 lower_limit = -_MAX_ABS_INTEGER_BOUND
                 upper_limit = _MAX_ABS_INTEGER_BOUND
-            elif kind == Kind.Continuous:
+            elif var.kind == DecisionVariable.CONTINUOUS:
+                kind = dimod.REAL
+                kind_name = "continuous"
                 lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
                 upper_limit = _MAX_ABS_CONTINUOUS_BOUND
             else:
                 raise AssertionError(
                     "Unsupported decision variable kind reached after applicability "
-                    f"validation: {kind}. This may indicate an OMMX implementation "
+                    f"validation: {var.kind}. This may indicate an OMMX implementation "
                     "bug; please report it to OMMX."
                 )
 
             if var.bound.lower < lower_limit:
                 raise OMMXDWaveAdapterError(
-                    f"D-Wave CQM {str(kind).lower()} variable {var.id} has lower "
+                    f"D-Wave CQM {kind_name} variable {var.id} has lower "
                     f"bound {var.bound.lower}, below {lower_limit}."
                 )
             if var.bound.upper > upper_limit:
                 raise OMMXDWaveAdapterError(
-                    f"D-Wave CQM {str(kind).lower()} variable {var.id} has upper "
+                    f"D-Wave CQM {kind_name} variable {var.id} has upper "
                     f"bound {var.bound.upper}, above {upper_limit}."
                 )
 
             self.model.add_variable(
-                _DIMOD_VARIABLE_TYPES[kind],
+                kind,
                 var.id,
                 lower_bound=var.bound.lower,
                 upper_bound=var.bound.upper,
@@ -407,6 +396,20 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
     def _set_objective(self):
         objective = self.instance.objective
+
+        objective_degree = objective.degree()
+        if objective_degree is None:
+            raise AssertionError(
+                "Non-polynomial objective reached after applicability validation. "
+                "This may indicate an OMMX implementation bug; please report it to "
+                "OMMX."
+            )
+        if objective_degree >= 3:
+            raise AssertionError(
+                "Unsupported objective degree reached after applicability validation: "
+                f"{objective_degree}. This may indicate an OMMX implementation bug; "
+                "please report it to OMMX."
+            )
 
         expr = self._make_expr(objective)
 
@@ -475,8 +478,23 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                     "bug; please report it to OMMX."
                 )
 
+            constraint_degree = constraint.function.degree()
+            if constraint_degree is None:
+                raise AssertionError(
+                    "Non-polynomial constraint reached after applicability validation: "
+                    f"constraint {constraint_id}. This may indicate an OMMX "
+                    "implementation bug; please report it to OMMX."
+                )
+            if constraint_degree >= 3:
+                raise AssertionError(
+                    "Unsupported constraint degree reached after applicability "
+                    f"validation: {constraint_degree} for constraint {constraint_id}. "
+                    "This may indicate an OMMX implementation bug; please report it "
+                    "to OMMX."
+                )
+
             # Only constant case
-            if constraint.function.degree() == 0:
+            if constraint_degree == 0:
                 if constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE).feasible:
                     continue
                 raise OMMXDWaveAdapterError(

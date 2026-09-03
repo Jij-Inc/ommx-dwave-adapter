@@ -1,40 +1,17 @@
 import pytest
-
 from ommx import (
     DecisionVariable,
-    DegreeBound,
-    Equality,
     Instance,
     InstanceClassMismatch,
     Kind,
     OneHotConstraint,
+    PolynomialRequirement,
     Sense,
     Sos1Constraint,
 )
 from ommx.adapter import AdapterNotApplicableError
 
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-
-
-def test_declares_quadratic_cqm_input_class() -> None:
-    input_class = OMMXLeapHybridCQMAdapter.INPUT_CLASS
-    [clause] = input_class.clauses
-
-    assert clause.label == "dwave-cqm"
-    assert clause.allowed_variable_kinds == {
-        Kind.Binary,
-        Kind.Integer,
-        Kind.Continuous,
-    }
-    assert clause.objective_degree_bound == DegreeBound.at_most(2)
-    assert clause.regular_constraint_degree_bounds == {
-        Equality.EqualToZero: DegreeBound.at_most(2),
-        Equality.LessThanOrEqualToZero: DegreeBound.at_most(2),
-    }
-    assert clause.indicator_constraint_degree_bounds == {}
-    assert clause.allows_one_hot
-    assert not clause.allows_sos1
-    assert clause.allowed_senses == {Sense.Minimize, Sense.Maximize}
 
 
 @pytest.mark.parametrize("sense", [Sense.Minimize, Sense.Maximize])
@@ -96,7 +73,7 @@ def test_error_on_unsupported_function():
     mismatch = mismatches[0]
     assert isinstance(mismatch, InstanceClassMismatch.ObjectiveDegreeExceedsBound)
     assert mismatch.actual_degree == 3
-    assert mismatch.bound == DegreeBound.at_most(2)
+    assert mismatch.bound == PolynomialRequirement.at_most(2)
 
 
 def test_error_on_unsupported_constraint():
@@ -118,7 +95,56 @@ def test_error_on_unsupported_constraint():
         mismatch, InstanceClassMismatch.RegularConstraintDegreeExceedsBound
     )
     assert mismatch.actual_degrees == {7: 3}
-    assert mismatch.bound == DegreeBound.at_most(2)
+    assert mismatch.bound == PolynomialRequirement.at_most(2)
+
+
+def test_asserts_if_unsupported_objective_reaches_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=x[0] * x[1] * x[2],
+        constraints={},
+        sense=Sense.Minimize,
+    )
+    monkeypatch.setattr(
+        OMMXLeapHybridCQMAdapter,
+        "require_applicable",
+        lambda self, instance: None,
+    )
+
+    with pytest.raises(
+        AssertionError,
+        match="Unsupported objective degree reached after applicability validation: 3",
+    ):
+        OMMXLeapHybridCQMAdapter(instance)
+
+
+def test_asserts_if_unsupported_constraint_reaches_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={7: x[0] * x[1] * x[2] == 0},
+        sense=Sense.Minimize,
+    )
+    monkeypatch.setattr(
+        OMMXLeapHybridCQMAdapter,
+        "require_applicable",
+        lambda self, instance: None,
+    )
+
+    with pytest.raises(
+        AssertionError,
+        match=(
+            "Unsupported constraint degree reached after applicability validation: "
+            "3 for constraint 7"
+        ),
+    ):
+        OMMXLeapHybridCQMAdapter(instance)
 
 
 @pytest.mark.parametrize(

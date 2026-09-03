@@ -1,19 +1,21 @@
+import dimod
+import pytest
+from dimod.sym import Sense
 from ommx import (
     DecisionVariable,
     Function,
     Instance,
-    Sense as OMMXSense,
     OneHotConstraint,
 )
-from dimod.sym import Sense
-import dimod
-import pytest
+from ommx import (
+    Sense as OMMXSense,
+)
 
 from ommx_dwave_adapter import OMMXDWaveAdapterError, OMMXLeapHybridCQMAdapter
 from ommx_dwave_adapter.adapter import (
-    ABSOLUTE_TOLERANCE,
     _MAX_ABS_CONTINUOUS_BOUND,
     _MAX_ABS_INTEGER_BOUND,
+    ABSOLUTE_TOLERANCE,
 )
 
 
@@ -181,11 +183,11 @@ def test_instance_to_cqm_model():
         )
         for i in range(N)
     ]
-    constraints = Function(sum(w[i] * x[i] for i in range(N))) <= W
+    constraint = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints={0: constraints},
+        constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -329,11 +331,11 @@ def test_encode_quadratic():
     y = DecisionVariable.integer(id=1, name="y", lower=10, upper=20)
     z = DecisionVariable.integer(id=2, name="z", lower=10, upper=20)
 
-    constraints = x + y * z >= 10
+    constraint = x + y * z >= 10
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x * y + z,
-        constraints={0: constraints},
+        constraints={0: constraint},
         sense=Instance.MINIMIZE,
     )
 
@@ -364,11 +366,11 @@ def test_decode():
         )
         for i in range(N)
     ]
-    constraints = Function(sum(w[i] * x[i] for i in range(N))) <= W
+    constraint = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints={0: constraints},
+        constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -654,6 +656,12 @@ def test_overlapping_one_hot_constraints_use_greedy_selection():
     assert instance.removed_one_hot_constraints == {}
     assert instance.constraints == {}
     assert set(model.discrete) == {"onehot_0", "onehot_2"}
-    assert model.constraints["onehot_1"].sense == Sense.Eq
-    assert model.constraints["onehot_1"].lhs.linear == {0: 1, 4: 1, 5: 1}
-    assert model.constraints["onehot_1"].rhs == 1
+    expected_constraints = {
+        "onehot_0": {0: 1, 1: 1, 2: 1, 3: 1},
+        "onehot_1": {0: 1, 4: 1, 5: 1},
+        "onehot_2": {4: 1, 6: 1},
+    }
+    for label, variables in expected_constraints.items():
+        assert model.constraints[label].sense == Sense.Eq
+        assert model.constraints[label].lhs.linear == variables
+        assert model.constraints[label].rhs == 1
