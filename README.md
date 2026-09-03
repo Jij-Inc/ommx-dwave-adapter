@@ -14,19 +14,15 @@ pip install ommx-dwave-adapter
 
 An example usage of the LeapHybridCQMSampler through this adapter:
 
-```python 
+```python
 from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
-from ommx.v1 import Instance, DecisionVariable
+from ommx import Instance
 
-x1 = DecisionVariable.integer(1, lower=0, upper=5)
-ommx_instance = Instance.from_components(
-    decision_variables=[x1],
-    objective=x1,
-    constraints=[],
-    sense=Instance.MINIMIZE,
-)
+ommx_instance = Instance.minimize()
+x1 = ommx_instance.new_binary("x1")
+ommx_instance.objective = x1
 
-# Create `ommx.v1.SampleSet` through `diwave.system.LeapHybridCQMSampler`
+# Create `ommx.SampleSet` through `dwave.system.LeapHybridCQMSampler`
 # Your Leap token can be set through configuration file, environment variable,
 # or passed with a `token` parameter.
 ommx_sampleset = OMMXLeapHybridCQMAdapter.sample(ommx_instance)

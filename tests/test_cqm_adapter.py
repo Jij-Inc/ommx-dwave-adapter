@@ -1,9 +1,171 @@
-from ommx.v1 import Instance, DecisionVariable, Polynomial, Function
-from dimod.sym import Sense
 import dimod
 import pytest
+from dimod.sym import Sense
+from ommx import (
+    DecisionVariable,
+    Function,
+    Instance,
+    OneHotConstraint,
+)
+from ommx import (
+    Sense as OMMXSense,
+)
 
-from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter, OMMXDWaveAdapterError
+from ommx_dwave_adapter import OMMXDWaveAdapterError, OMMXLeapHybridCQMAdapter
+from ommx_dwave_adapter.adapter import (
+    _MAX_ABS_CONTINUOUS_BOUND,
+    _MAX_ABS_INTEGER_BOUND,
+    ABSOLUTE_TOLERANCE,
+)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        DecisionVariable.binary(0),
+        DecisionVariable.integer(
+            0,
+            lower=-_MAX_ABS_INTEGER_BOUND,
+            upper=_MAX_ABS_INTEGER_BOUND,
+        ),
+        DecisionVariable.continuous(
+            0,
+            lower=-_MAX_ABS_CONTINUOUS_BOUND,
+            upper=_MAX_ABS_CONTINUOUS_BOUND,
+        ),
+    ],
+)
+def test_accepts_dwave_variable_boundaries(variable):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.is_member
+    OMMXLeapHybridCQMAdapter(instance)
+
+
+@pytest.mark.parametrize(
+    ("variable", "expected_message"),
+    [
+        (
+            DecisionVariable.integer(
+                0,
+                lower=-(_MAX_ABS_INTEGER_BOUND + 1),
+                upper=0,
+            ),
+            "D-Wave CQM integer variable 0 has lower bound",
+        ),
+        (
+            DecisionVariable.integer(
+                0,
+                lower=0,
+                upper=_MAX_ABS_INTEGER_BOUND + 1,
+            ),
+            "D-Wave CQM integer variable 0 has upper bound",
+        ),
+        (
+            DecisionVariable.continuous(
+                0,
+                lower=-2 * _MAX_ABS_CONTINUOUS_BOUND,
+                upper=0,
+            ),
+            "D-Wave CQM continuous variable 0 has lower bound",
+        ),
+        (
+            DecisionVariable.continuous(
+                0,
+                lower=0,
+                upper=2 * _MAX_ABS_CONTINUOUS_BOUND,
+            ),
+            "D-Wave CQM continuous variable 0 has upper bound",
+        ),
+    ],
+)
+def test_rejects_out_of_range_dwave_variable_bound_during_conversion(
+    variable, expected_message
+):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.is_member
+    with pytest.raises(OMMXDWaveAdapterError, match=expected_message):
+        OMMXLeapHybridCQMAdapter(instance)
+
+
+@pytest.mark.parametrize(
+    ("variable", "kind"),
+    [
+        (DecisionVariable.integer(0), "integer"),
+        (DecisionVariable.continuous(0), "continuous"),
+    ],
+)
+def test_rejects_default_unbounded_dwave_variable(variable, kind):
+    instance = Instance.from_components(
+        decision_variables=[variable],
+        objective=variable,
+        constraints={},
+        sense=OMMXSense.Minimize,
+    )
+
+    report = OMMXLeapHybridCQMAdapter.check_applicability(instance)
+
+    assert report.is_member
+    with pytest.raises(
+        OMMXDWaveAdapterError,
+        match=f"D-Wave CQM {kind} variable 0 has lower bound",
+    ):
+        OMMXLeapHybridCQMAdapter(instance)
+
+
+def test_skips_feasible_constant_constraints():
+    x = DecisionVariable.binary(0)
+    instance = Instance.from_components(
+        decision_variables=[x],
+        objective=x,
+        constraints={
+            0: Function(ABSOLUTE_TOLERANCE / 2) == 0,
+            1: Function(-ABSOLUTE_TOLERANCE / 2) == 0,
+            2: Function(ABSOLUTE_TOLERANCE / 2) <= 0,
+            3: Function(-1) <= 0,
+        },
+        sense=OMMXSense.Minimize,
+    )
+
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+
+    assert len(adapter.sampler_input.constraints) == 0
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        Function(2 * ABSOLUTE_TOLERANCE) == 0,
+        Function(2 * ABSOLUTE_TOLERANCE) <= 0,
+    ],
+    ids=["equality", "less-than-or-equal"],
+)
+def test_rejects_infeasible_constant_constraint(constraint):
+    x = DecisionVariable.binary(0)
+    instance = Instance.from_components(
+        decision_variables=[x],
+        objective=x,
+        constraints={7: constraint},
+        sense=OMMXSense.Minimize,
+    )
+
+    with pytest.raises(OMMXDWaveAdapterError, match="id 7"):
+        OMMXLeapHybridCQMAdapter(instance)
 
 
 def test_instance_to_cqm_model():
@@ -21,11 +183,11 @@ def test_instance_to_cqm_model():
         )
         for i in range(N)
     ]
-    constraints = [(Function(sum(w[i] * x[i] for i in range(N))) <= W).set_id(0)]
+    constraint = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints=constraints,
+        constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -44,61 +206,6 @@ def test_instance_to_cqm_model():
     assert model.constraints[0].rhs == 0
 
 
-def test_error_on_unsupported_function():
-    decision_variables = [
-        DecisionVariable.of_type(
-            kind=DecisionVariable.BINARY, id=0, lower=0, upper=1, name="x"
-        ),
-        DecisionVariable.of_type(
-            kind=DecisionVariable.INTEGER,
-            id=1,
-            lower=-20.0,
-            upper=20.0,
-            name="y",
-            subscripts=[],
-        ),
-        DecisionVariable.of_type(
-            kind=DecisionVariable.CONTINUOUS,
-            id=2,
-            lower=-30,
-            upper=30,
-            name="z",
-            subscripts=[0],
-        ),
-        DecisionVariable.of_type(
-            kind=DecisionVariable.CONTINUOUS,
-            id=3,
-            # TODO dwave doesn't accept -inf, +inf. how to handle this? should the adapter convert?
-            lower=float("-1e30"),
-            upper=float("1e30"),
-            name="w",
-            subscripts=[1, 2],
-        ),
-    ]
-    objective = Polynomial(terms={(0, 1, 2): 2.0, (1, 2): 3.0, (2,): 4.0, (): 5.0})
-
-    instance = Instance.from_components(
-        decision_variables=decision_variables,
-        objective=objective,
-        constraints=[],
-        sense=Instance.MINIMIZE,
-    )
-    with pytest.raises(OMMXDWaveAdapterError):
-        OMMXLeapHybridCQMAdapter(instance)
-
-    # cubic function
-    objective = decision_variables[0] * decision_variables[1] * decision_variables[2]
-
-    instance = Instance.from_components(
-        decision_variables=decision_variables,
-        objective=objective,
-        constraints=[],
-        sense=Instance.MINIMIZE,
-    )
-    with pytest.raises(OMMXDWaveAdapterError):
-        OMMXLeapHybridCQMAdapter(instance)
-
-
 def test_encode_single_var_types():
     N = 3
     xs = [DecisionVariable.binary(id=i) for i in range(N)]
@@ -106,7 +213,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -122,7 +229,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -140,7 +247,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -158,16 +265,12 @@ def test_encode_multi_variable_types():
     y = DecisionVariable.binary(id=1, name="y")
     z = DecisionVariable.integer(id=2, name="z", lower=1, upper=10)
     A = 2
-    # we have to explicitly set the ids (& the dimod label)
-    # so dimod matches the constraint with the expected model,
-    # as the id OMMX seems to set automatically seems to depend
-    # on _all_ constraints being made across all tests (and thus
-    # is unstable if we ever change things)
-    constraints = [(x + z >= A).set_id(0), (z == 2).set_id(1)]
+    constraint_1 = x + z >= A
+    constraint_2 = z == 2
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x + y * z,
-        constraints=constraints,
+        constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MINIMIZE,
     )
 
@@ -200,11 +303,12 @@ def test_encode_maximize():
     z = DecisionVariable.integer(id=2, name="z", lower=1, upper=10)
     A = 2
 
-    constraints = [(x + z >= A).set_id(0), (z == 2).set_id(1)]
+    constraint_1 = x + z >= A
+    constraint_2 = z == 2
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x + y * z,
-        constraints=constraints,
+        constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MAXIMIZE,
     )
 
@@ -227,11 +331,11 @@ def test_encode_quadratic():
     y = DecisionVariable.integer(id=1, name="y", lower=10, upper=20)
     z = DecisionVariable.integer(id=2, name="z", lower=10, upper=20)
 
-    constraints = [(x + y * z >= 10).set_id(0)]
+    constraint = x + y * z >= 10
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x * y + z,
-        constraints=constraints,
+        constraints={0: constraint},
         sense=Instance.MINIMIZE,
     )
 
@@ -262,11 +366,11 @@ def test_decode():
         )
         for i in range(N)
     ]
-    constraints = [Function(sum(w[i] * x[i] for i in range(N))) <= W]
+    constraint = Function(sum(w[i] * x[i] for i in range(N))) <= W
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints=constraints,
+        constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -297,7 +401,7 @@ def test_decode_no_constraints():
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(x[i] for i in range(3)),
-        constraints=[],
+        constraints={},
         sense=Instance.MINIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -323,7 +427,7 @@ def test_partial_evaluate():
     instance = Instance.from_components(
         decision_variables=x,
         objective=x[0] + x[1] + x[2],
-        constraints=[(x[0] + x[1] + x[2] <= 1).set_id(0)],
+        constraints={0: x[0] + x[1] + x[2] <= 1},
         sense=Instance.MINIMIZE,
     )
     assert instance.used_decision_variables == x
@@ -374,14 +478,14 @@ def test_relax_constraint():
     instance = Instance.from_components(
         decision_variables=x,
         objective=x[0] + x[1],
-        constraints=[(x[0] + 2 * x[1] <= 1).set_id(0), (x[1] + x[2] <= 1).set_id(1)],
+        constraints={0: x[0] + 2 * x[1] <= 1, 1: x[1] + x[2] <= 1},
         sense=Instance.MINIMIZE,
     )
 
     assert instance.used_decision_variables == x
     instance.relax_constraint(1, "relax")
     # id for x[2] is listed as irrelevant
-    assert instance.decision_variable_analysis().irrelevant() == {x[2].id}
+    assert instance.irrelevant_decision_variable_ids() == {x[2].id}
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     cqm = adapter.sampler_input
@@ -394,3 +498,170 @@ def test_relax_constraint():
     expected.add_constraint(dimod_x0 + 2 * dimod_x1 - 1 <= 0, label=0)
 
     assert cqm.is_equal(expected)
+
+
+def test_encode_one_hot_constraint():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert list(model.variables) == [0, 1, 2]
+    assert model.objective.linear == {}
+    assert model.objective.quadratic == {}
+    assert model.objective.offset == 0
+
+    label = "onehot_0"
+    assert label in model.constraints
+    assert label in model.discrete
+    assert model.constraints[label].sense == Sense.Eq
+    assert model.constraints[label].lhs.linear == {0: 1, 1: 1, 2: 1}
+    assert model.constraints[label].rhs == 1
+
+
+def test_encode_multiple_disjoint_one_hot_constraints():
+    x = [DecisionVariable.binary(i) for i in range(6)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[x[0], x[1], x[2]]),
+            1: OneHotConstraint(variables=[x[3], x[4], x[5]]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    expected_variables = {
+        "onehot_0": {0: 1, 1: 1, 2: 1},
+        "onehot_1": {3: 1, 4: 1, 5: 1},
+    }
+    for label, variables in expected_variables.items():
+        assert label in model.constraints
+        assert label in model.discrete
+        assert model.constraints[label].sense == Sense.Eq
+        assert model.constraints[label].lhs.linear == variables
+        assert model.constraints[label].rhs == 1
+
+
+def test_regular_and_one_hot_constraint_labels_do_not_conflict():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={0: x[0] + x[1] <= 1},
+        one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
+        sense=Instance.MINIMIZE,
+    )
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert 0 in model.constraints
+    assert "onehot_0" in model.constraints
+    assert 0 not in model.discrete
+    assert "onehot_0" in model.discrete
+
+
+def test_overlapping_one_hot_constraint_is_encoded_without_mutating_input():
+    x = [DecisionVariable.binary(i) for i in range(4)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[x[0], x[1]]),
+            1: OneHotConstraint(variables=[x[1], x[2], x[3]]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+    before = instance.to_v2_bytes()
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert instance.to_v2_bytes() == before
+    assert set(instance.one_hot_constraints) == {0, 1}
+    assert instance.removed_one_hot_constraints == {}
+    assert instance.constraints == {}
+
+    assert set(model.discrete) == {"onehot_1"}
+    assert model.constraints["onehot_1"].lhs.linear == {1: 1, 2: 1, 3: 1}
+    assert model.constraints["onehot_1"].rhs == 1
+
+    assert "onehot_0" in model.constraints
+    assert "onehot_0" not in model.discrete
+    assert model.constraints["onehot_0"].sense == Sense.Eq
+    assert model.constraints["onehot_0"].lhs.linear == {0: 1, 1: 1}
+    assert model.constraints["onehot_0"].lhs.offset == 0
+    assert model.constraints["onehot_0"].rhs == 1
+
+
+def test_equal_length_overlapping_one_hot_constraints_keep_first():
+    x = [DecisionVariable.binary(i) for i in range(3)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            1: OneHotConstraint(variables=[x[1], x[2]]),
+            0: OneHotConstraint(variables=[x[0], x[1]]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+    constraint_ids = list(instance.one_hot_constraints)
+    before = instance.to_v2_bytes()
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert instance.to_v2_bytes() == before
+    assert set(instance.one_hot_constraints) == set(constraint_ids)
+    assert instance.removed_one_hot_constraints == {}
+    assert instance.constraints == {}
+    assert set(model.discrete) == {f"onehot_{constraint_ids[0]}"}
+    regularized_label = f"onehot_{constraint_ids[1]}"
+    regularized = instance.one_hot_constraints[constraint_ids[1]]
+    assert model.constraints[regularized_label].sense == Sense.Eq
+    assert model.constraints[regularized_label].lhs.linear == {
+        variable_id: 1 for variable_id in regularized.variables
+    }
+    assert model.constraints[regularized_label].rhs == 1
+
+
+def test_overlapping_one_hot_constraints_use_greedy_selection():
+    x = [DecisionVariable.binary(i) for i in range(7)]
+    instance = Instance.from_components(
+        decision_variables=x,
+        objective=0,
+        constraints={},
+        one_hot_constraints={
+            0: OneHotConstraint(variables=[x[0], x[1], x[2], x[3]]),
+            1: OneHotConstraint(variables=[x[0], x[4], x[5]]),
+            2: OneHotConstraint(variables=[x[4], x[6]]),
+        },
+        sense=Instance.MINIMIZE,
+    )
+    before = instance.to_v2_bytes()
+
+    model = OMMXLeapHybridCQMAdapter(instance).sampler_input
+
+    assert instance.to_v2_bytes() == before
+    assert set(instance.one_hot_constraints) == {0, 1, 2}
+    assert instance.removed_one_hot_constraints == {}
+    assert instance.constraints == {}
+    assert set(model.discrete) == {"onehot_0", "onehot_2"}
+    expected_constraints = {
+        "onehot_0": {0: 1, 1: 1, 2: 1, 3: 1},
+        "onehot_1": {0: 1, 4: 1, 5: 1},
+        "onehot_2": {4: 1, 6: 1},
+    }
+    for label, variables in expected_constraints.items():
+        assert model.constraints[label].sense == Sense.Eq
+        assert model.constraints[label].lhs.linear == variables
+        assert model.constraints[label].rhs == 1
