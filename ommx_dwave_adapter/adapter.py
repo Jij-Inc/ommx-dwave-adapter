@@ -2,6 +2,7 @@ import copy
 
 from ommx.adapter import DiagnosticsSink, SamplerAdapter
 from ommx import (
+    DecisionVariable,
     DegreeBound,
     Equality,
     Function,
@@ -366,24 +367,26 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
     def _set_decision_variables(self):
         for var in self.instance.used_decision_variables:
-            kind = Kind.from_pb(var.kind)
             lower_limit = None
             upper_limit = None
-            if kind == Kind.Binary:
+            if var.kind == DecisionVariable.BINARY:
+                kind = Kind.Binary
                 # dimod ignores bounds passed to add_variable for binary variables,
                 # but keep explicit limits here for consistency with the other kinds.
                 lower_limit = 0
                 upper_limit = 1
-            elif kind == Kind.Integer:
+            elif var.kind == DecisionVariable.INTEGER:
+                kind = Kind.Integer
                 lower_limit = -_MAX_ABS_INTEGER_BOUND
                 upper_limit = _MAX_ABS_INTEGER_BOUND
-            elif kind == Kind.Continuous:
+            elif var.kind == DecisionVariable.CONTINUOUS:
+                kind = Kind.Continuous
                 lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
                 upper_limit = _MAX_ABS_CONTINUOUS_BOUND
             else:
                 raise AssertionError(
                     "Unsupported decision variable kind reached after applicability "
-                    f"validation: {kind}. This may indicate an OMMX implementation "
+                    f"validation: {var.kind}. This may indicate an OMMX implementation "
                     "bug; please report it to OMMX."
                 )
 
