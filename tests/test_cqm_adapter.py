@@ -1,19 +1,21 @@
+import dimod
+import pytest
+from dimod.sym import Sense
 from ommx import (
     DecisionVariable,
     Function,
     Instance,
-    Sense as OMMXSense,
     OneHotConstraint,
 )
-from dimod.sym import Sense
-import dimod
-import pytest
+from ommx import (
+    Sense as OMMXSense,
+)
 
 from ommx_dwave_adapter import OMMXDWaveAdapterError, OMMXLeapHybridCQMAdapter
 from ommx_dwave_adapter.adapter import (
-    ABSOLUTE_TOLERANCE,
     _MAX_ABS_CONTINUOUS_BOUND,
     _MAX_ABS_INTEGER_BOUND,
+    ABSOLUTE_TOLERANCE,
 )
 
 

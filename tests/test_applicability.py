@@ -1,5 +1,4 @@
 import pytest
-
 from ommx import (
     DecisionVariable,
     Instance,

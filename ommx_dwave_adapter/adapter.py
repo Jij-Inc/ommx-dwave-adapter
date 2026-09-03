@@ -1,6 +1,11 @@
 import copy
+from typing import ClassVar
 
-from ommx.adapter import DiagnosticsSink, SamplerAdapter
+import dimod
+from dimod import ConstrainedQuadraticModel
+from dimod.sym import Sense as DimodSense
+from dimod.typing import VartypeLike
+from dwave.system import LeapHybridCQMSampler
 from ommx import (
     DecisionVariable,
     Equality,
@@ -17,13 +22,7 @@ from ommx import (
     SpecialConstraintKind,
     SpecialConstraintPreparation,
 )
-
-import dimod
-from dimod import ConstrainedQuadraticModel
-from dimod.sym import Sense as DimodSense
-from dimod.typing import VartypeLike
-from dwave.system import LeapHybridCQMSampler
-from typing import ClassVar, Optional
+from ommx.adapter import DiagnosticsSink, SamplerAdapter
 
 from .exception import OMMXDWaveAdapterError
 
@@ -95,9 +94,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> SampleSet:
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
@@ -155,9 +154,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> SampleSet:
         """Sample an exact D-Wave CQM Adapter input without preparing it.
@@ -208,9 +207,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> Solution:
         """Solve the given ommx.Instance using dwave's LeapHybridCQMSampler,
@@ -268,9 +267,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         cls,
         ommx_instance: Instance,
         *,
-        token: Optional[str] = None,
-        time_limit: Optional[int] = None,
-        label: Optional[str] = None,
+        token: str | None = None,
+        time_limit: int | None = None,
+        label: str | None = None,
         diagnostics: DiagnosticsSink | None = None,
     ) -> Solution:
         """Solve an exact D-Wave CQM Adapter input without preparing it.
