@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import dimod
 import pytest
 from dimod.sym import Sense
@@ -417,6 +419,25 @@ def test_decode():
     assert best.state.entries[5] == pytest.approx(0)
 
 
+@pytest.mark.parametrize(("time_limit", "expected"), [(None, None), (3, 5), (10, 10)])
+def test_sample_forwards_time_limit(monkeypatch, time_limit, expected):
+    instance = Instance.minimize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    sampler = Mock()
+    sampler.properties = {"minimum_time_limit_s": 5}
+    sampler.sample_cqm.return_value = dimod.SampleSet.from_samples(
+        {x.id: 0}, vartype=dimod.BINARY, energy=0
+    )
+    monkeypatch.setattr(
+        "ommx_dwave_adapter.adapter.LeapHybridCQMSampler", Mock(return_value=sampler)
+    )
+
+    OMMXLeapHybridCQMAdapter.sample(instance, time_limit=time_limit)
+
+    assert sampler.sample_cqm.call_args.kwargs["time_limit"] == expected
+
+
 def test_decode_preserves_occurrences():
     instance = Instance.maximize()
     x = instance.new_binary("x")
@@ -429,6 +450,30 @@ def test_decode_preserves_occurrences():
     decoded = adapter.decode_to_sampleset(samples)
     assert decoded.num_samples() == 4
     assert decoded.objectives == {0: 0, 1: 1, 2: 1, 3: 1}
+
+
+@pytest.mark.parametrize("count", [-1, 0.9, 1.1, float("nan"), float("inf")])
+def test_decode_rejects_invalid_occurrence_count(count):
+    instance = Instance.minimize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{x.id: 0}, {x.id: 1}], adapter.sampler_input, num_occurrences=[1, count]
+    )
+    with pytest.raises(OMMXDWaveAdapterError, match="num_occurrences.*row 1"):
+        adapter.decode_to_sampleset(samples)
+
+
+def test_decode_accepts_integer_valued_counts_and_zero():
+    instance = Instance.minimize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{x.id: 0}, {x.id: 1}], adapter.sampler_input, num_occurrences=[0.0, 2.0]
+    )
+    assert adapter.decode_to_sampleset(samples).objectives == {0: 1, 1: 1}
 
 
 def test_decode_uses_instance_as_encoded():

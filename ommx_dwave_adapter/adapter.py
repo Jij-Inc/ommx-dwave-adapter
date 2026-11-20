@@ -2,6 +2,7 @@ import copy
 from typing import ClassVar
 
 import dimod
+import numpy as np
 from dimod import ConstrainedQuadraticModel
 from dimod.sym import Sense as DimodSense
 from dwave.system import LeapHybridCQMSampler
@@ -111,7 +112,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The ommx.Instance to prepare and sample.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
-        :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
@@ -169,7 +170,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The exact D-Wave CQM Adapter input to sample.
         :param token: Token for instantiating the D-Wave sampler.
-        :param time_limit: Maximum solver time in seconds.
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
@@ -185,12 +186,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         model = adapter.sampler_input
         sampler = LeapHybridCQMSampler(token=token)
 
-        # TODO is this necessary or will it always just go for the minimum if no time limit is set?
-        if (
-            time_limit is None
-            or time_limit < sampler.properties["minimum_time_limit_s"]
-        ):
-            time_limit = sampler.properties["minimum_time_limit_s"]
+        if time_limit is not None:
+            time_limit = max(time_limit, sampler.properties["minimum_time_limit_s"])
 
         dimod_sampleset = sampler.sample_cqm(model, time_limit=time_limit, label=label)
         dimod_sampleset.resolve()
@@ -220,7 +217,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The ommx.Instance to prepare and solve.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
-        :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
@@ -278,7 +275,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The exact D-Wave CQM Adapter input to solve.
         :param token: Token for instantiating the D-Wave sampler.
-        :param time_limit: Maximum solver time in seconds.
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
@@ -337,7 +334,17 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> sample = adapter.decode_to_sampleset(dimod_sampleset)  # doctest: +SKIP
         """
         samples = Samples({})
-        for values, count in zip(data.record.sample, data.record.num_occurrences):
+        for row, (values, count) in enumerate(
+            zip(data.record.sample, data.record.num_occurrences)
+        ):
+            if isinstance(count, (float, np.floating)) and count.is_integer():
+                count = int(count)
+            if not isinstance(count, (int, np.integer)) or count < 0:
+                raise OMMXDWaveAdapterError(
+                    f"Expected a nonnegative integer num_occurrences in row {row}, got {count!r}."
+                )
+            if count == 0:
+                continue
             state = {
                 var.__hash__(): float(value)
                 for var, value in zip(data.variables, values)
