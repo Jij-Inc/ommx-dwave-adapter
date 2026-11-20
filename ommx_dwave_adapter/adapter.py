@@ -297,12 +297,17 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
     @property
     def sampler_input(self) -> ConstrainedQuadraticModel:
-        """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
+        """The dimod CQM built from this instance.
+
+        Variable labels are integer OMMX IDs. OMMX constraint labels are
+        ``str(constraint_id)``, such as ``"ConstraintID(7)"`` or ``"OneHotConstraintID(2)"``.
+        An equality fixing a binary variable is labeled ``fixed_binary_<variable ID>``.
+        """
         return self.model
 
     @property
     def solver_input(self) -> ConstrainedQuadraticModel:
-        """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
+        """The same dimod CQM as :attr:`sampler_input`."""
         return self.model
 
     def decode_to_sampleset(self, data: dimod.SampleSet) -> SampleSet:

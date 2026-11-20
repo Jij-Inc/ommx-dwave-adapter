@@ -31,17 +31,3 @@ ommx_sampleset = OMMXLeapHybridCQMAdapter.sample(ommx_instance)
 
 print(ommx_sampleset)
 ```
-
-When constructing `OMMXLeapHybridCQMAdapter(instance)` directly, keep `instance`
-unchanged until you finish using the adapter, including backend configuration,
-execution, and decoding. The adapter retains the instance by reference. To edit
-the original during sampling, pass `copy.copy(instance)` to the constructor.
-`sample_without_preparation()` and `solve_without_preparation()` require the input
-to stay unchanged for the duration of the call. `sample()` and `solve()` prepare
-their own copy.
-
-When accessing the dimod model through `solver_input` or `sampler_input`, use the integer OMMX
-variable ID as the variable label and `str(constraint_id)` as the constraint
-label (for example, `"ConstraintID(7)"` or `"OneHotConstraintID(2)"`).
-For an active binary variable with equal lower and upper bounds, the adapter
-adds an equality labeled `fixed_binary_<variable ID>` to enforce the fixed value.
