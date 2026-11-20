@@ -2,13 +2,16 @@ import copy
 
 import pytest
 from ommx import (
+    ConstraintKind,
     DecisionVariable,
+    IndicatorConstraintID,
     Instance,
     InstanceClassMismatch,
     OneHotConstraint,
+    OneHotConstraintID,
     Sense,
     Sos1Constraint,
-    SpecialConstraintKind,
+    Sos1ConstraintID,
 )
 from ommx.adapter import AdapterNotApplicableError
 
@@ -22,12 +25,12 @@ def _instance_with_unsupported_special_constraints() -> Instance:
     return Instance.from_components(
         decision_variables=[indicator, *one_hot_variables, value],
         objective=value,
-        constraints={},
-        indicator_constraints={30: (value <= 1).with_indicator(indicator)},
-        one_hot_constraints={
+        active_constraints={},
+        active_indicator_constraints={30: (value <= 1).with_indicator(indicator)},
+        active_one_hot_constraints={
             10: OneHotConstraint(variables=one_hot_variables),
         },
-        sos1_constraints={20: Sos1Constraint(variables=one_hot_variables)},
+        active_sos1_constraints={20: Sos1Constraint(variables=one_hot_variables)},
         sense=Sense.Maximize,
     )
 
@@ -79,15 +82,17 @@ def test_recommended_preparation_lowers_only_unsupported_special_constraints() -
         OMMXLeapHybridCQMAdapter.recommended_preparation_policy(),
     )
 
-    assert set(instance.indicator_constraints) == {30}
-    assert set(instance.one_hot_constraints) == {10}
-    assert set(instance.sos1_constraints) == {20}
-    assert prepared.indicator_constraints == {}
-    assert set(prepared.one_hot_constraints) == {10}
-    assert prepared.sos1_constraints == {}
-    assert prepared.active_special_constraint_kinds == {
-        SpecialConstraintKind.OneHot,
+    assert set(instance.active_constraints) == {
+        IndicatorConstraintID(30),
+        OneHotConstraintID(10),
+        Sos1ConstraintID(20),
     }
+    assert not prepared.active_constraints.of_kind(ConstraintKind.Indicator)
+    assert set(prepared.active_constraints.of_kind(ConstraintKind.OneHot)) == {
+        OneHotConstraintID(10)
+    }
+    assert not prepared.active_constraints.of_kind(ConstraintKind.Sos1)
+    assert prepared.active_special_constraint_kinds == {ConstraintKind.OneHot}
     assert input_class.contains(prepared)
     assert OMMXLeapHybridCQMAdapter.check_applicability(prepared).is_member
 

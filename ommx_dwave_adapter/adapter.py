@@ -6,6 +6,7 @@ from dimod import ConstrainedQuadraticModel
 from dimod.sym import Sense as DimodSense
 from dwave.system import LeapHybridCQMSampler
 from ommx import (
+    ConstraintKind,
     DecisionVariable,
     Equality,
     Function,
@@ -18,7 +19,6 @@ from ommx import (
     SampleSet,
     Sense,
     Solution,
-    SpecialConstraintKind,
     SpecialConstraintPreparation,
 )
 from ommx.adapter import DiagnosticsSink, SamplerAdapter
@@ -68,8 +68,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return PreparationPolicy(
             special_constraints=SpecialConstraintPreparation.lower_special_constraints(
                 kinds={
-                    SpecialConstraintKind.Indicator,
-                    SpecialConstraintKind.Sos1,
+                    ConstraintKind.Indicator,
+                    ConstraintKind.Sos1,
                 }
             )
         )
@@ -351,7 +351,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return sample_set.best_feasible
 
     def _set_decision_variables(self):
-        for var in self.instance.used_decision_variables:
+        for var in self.instance.active_decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 kind = dimod.BINARY
                 kind_name = "binary"
@@ -431,15 +431,25 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.model.set_objective(expr)
 
     def _set_constraints(self):
+        unsupported = self.instance.active_constraint_kinds - {
+            ConstraintKind.Regular,
+            ConstraintKind.OneHot,
+        }
+        if unsupported:
+            raise OMMXDWaveAdapterError(
+                f"Unsupported active constraint kinds: {unsupported}"
+            )
+
+        active = self.instance.active_constraints
         # Handle OneHot constraints (first-class constraint type)
         one_hot_variable_ids = set()
         selected_one_hot_constraints = []
         regularized_one_hot_constraints = []
         # Prefer constraints with more variables. The stable sort keeps the order
-        # from one_hot_constraints when two constraints have the same length.
+        # from the OneHot collection when two constraints have the same length.
         # This selection policy follows the existing ommx-da4-adapter behavior.
         sorted_one_hot_constraints = sorted(
-            self.instance.one_hot_constraints.items(),
+            active.of_kind(ConstraintKind.OneHot).items(),
             key=lambda item: len(item[1].variables),
             reverse=True,
         )
@@ -457,7 +467,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         for constraint_id, constraint in selected_one_hot_constraints:
             self.model.add_discrete_from_iterable(
                 constraint.variables,
-                label=f"onehot_{constraint_id}",
+                label=str(constraint_id),
                 check_overlaps=False,
             )
 
@@ -466,10 +476,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 ((variable_id, 1.0) for variable_id in constraint.variables),
                 DimodSense.Eq,
                 rhs=1.0,
-                label=f"onehot_{constraint_id}",
+                label=str(constraint_id),
             )
 
-        for constraint_id, constraint in self.instance.constraints.items():
+        for constraint_id, constraint in active.of_kind(ConstraintKind.Regular).items():
             if constraint.equality not in _DIMOD_CONSTRAINT_SENSES:
                 raise AssertionError(
                     "Unsupported constraint equality reached after applicability "
@@ -495,7 +505,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
             # Only constant case
             if constraint_degree == 0:
-                if constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE).feasible:
+                evaluated = constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE)
+                if evaluated.is_feasible(atol=ABSOLUTE_TOLERANCE):
                     continue
                 raise OMMXDWaveAdapterError(
                     f"Infeasible constant constraint was found: id {constraint_id}"
@@ -508,7 +519,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             self.model.add_constraint_from_iterable(
                 expr,
                 _DIMOD_CONSTRAINT_SENSES[constraint.equality],
-                label=constraint_id,
+                label=str(constraint_id),
             )
 
     def _make_expr(self, function: Function):

@@ -4,6 +4,8 @@ Provides an adapter to translate between [OMMX](https://github.com/Jij-Inc/ommx)
 
 Currently only implements an adapter to LeapHybridCQMSampler.
 
+Requires Python 3.11 or later and OMMX SDK `>=3.0.0rc1,<4`.
+
 # Usage
 
 `ommx-dwave-adapter` can be installed from PyPI as follows:
@@ -29,3 +31,7 @@ ommx_sampleset = OMMXLeapHybridCQMAdapter.sample(ommx_instance)
 
 print(ommx_sampleset)
 ```
+
+When accessing the dimod model through `sampler_input`, use the integer OMMX
+variable ID as the variable label and `str(constraint_id)` as the constraint
+label (for example, `"ConstraintID(7)"` or `"OneHotConstraintID(2)"`).
