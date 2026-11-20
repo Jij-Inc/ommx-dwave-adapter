@@ -1,6 +1,6 @@
 import copy
 from itertools import chain
-from typing import ClassVar
+from typing import ClassVar, final
 
 import dimod
 import numpy as np
@@ -39,6 +39,7 @@ _DIMOD_CONSTRAINT_SENSES: dict[Equality, DimodSense] = {
 }
 
 
+@final
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     """Convert an OMMX instance to a D-Wave constrained quadratic model.
 
