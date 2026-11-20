@@ -4,6 +4,8 @@ Provides an adapter to translate between [OMMX](https://github.com/Jij-Inc/ommx)
 
 Currently only implements an adapter to LeapHybridCQMSampler.
 
+Requires Python 3.11 or later and OMMX SDK `>=3.0.0rc1,<4`.
+
 # Usage
 
 `ommx-dwave-adapter` can be installed from PyPI as follows:
