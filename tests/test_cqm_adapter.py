@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import dimod
 import pytest
@@ -331,7 +331,7 @@ def test_encode_maximize():
     constraint_2 = z == 2
     instance = Instance.from_components(
         decision_variables=[x, y, z],
-        objective=x + y * z,
+        objective=x + y * z + 3,
         active_constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MAXIMIZE,
     )
@@ -340,7 +340,7 @@ def test_encode_maximize():
     dimod_x = dimod.Real(0, lower_bound=-10, upper_bound=10)
     dimod_y = dimod.Binary(1)
     dimod_z = dimod.Integer(2, lower_bound=1, upper_bound=10)
-    expected.set_objective(-dimod_x - dimod_y * dimod_z)
+    expected.set_objective(-dimod_x - dimod_y * dimod_z - 3)
     expected.add_constraint(-dimod_x - dimod_z + A <= 0, label="ConstraintID(0)")
     expected.add_constraint(dimod_z - 2 == 0, label="ConstraintID(1)")
 
@@ -424,7 +424,8 @@ def test_sample_forwards_time_limit(monkeypatch, time_limit, expected):
     instance = Instance.minimize()
     x = instance.new_binary("x")
     instance.objective = x
-    sampler = Mock()
+    sampler = MagicMock()
+    sampler.__enter__.return_value = sampler
     sampler.properties = {"minimum_time_limit_s": 5}
     sampler.sample_cqm.return_value = dimod.SampleSet.from_samples(
         {x.id: 0}, vartype=dimod.BINARY, energy=0
@@ -436,6 +437,54 @@ def test_sample_forwards_time_limit(monkeypatch, time_limit, expected):
     OMMXLeapHybridCQMAdapter.sample(instance, time_limit=time_limit)
 
     assert sampler.sample_cqm.call_args.kwargs["time_limit"] == expected
+    sampler.__exit__.assert_called_once_with(None, None, None)
+
+
+def test_sampler_closes_when_resolving_fails(monkeypatch):
+    sampler = MagicMock()
+    sampler.__enter__.return_value = sampler
+    failure = RuntimeError("solver failed")
+    sampler.sample_cqm.return_value.resolve.side_effect = failure
+    monkeypatch.setattr(
+        "ommx_dwave_adapter.adapter.LeapHybridCQMSampler", Mock(return_value=sampler)
+    )
+
+    with pytest.raises(RuntimeError, match="solver failed"):
+        OMMXLeapHybridCQMAdapter.solve(Instance.minimize())
+    assert sampler.__exit__.call_args.args[:2] == (RuntimeError, failure)
+
+
+@pytest.mark.parametrize("sense", [OMMXSense.Minimize, OMMXSense.Maximize])
+def test_solve_evaluates_each_observed_row_once(monkeypatch, sense):
+    x, y = (DecisionVariable.binary(i) for i in range(2))
+    instance = Instance.from_components(
+        decision_variables=[x, y],
+        objective=x + y,
+        active_constraints={0: x + y >= 1},
+        sense=sense,
+    )
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{0: 1, 1: 1}, {0: 0, 1: 0}, {0: 1, 1: 0}, {0: 0, 1: 1}],
+        adapter.sampler_input,
+        num_occurrences=[0, 3, 2, 5],
+    )
+    expected = adapter.decode_to_sampleset(samples).best_feasible
+    monkeypatch.setattr(
+        OMMXLeapHybridCQMAdapter, "_sample_cqm", Mock(return_value=samples)
+    )
+    evaluate_samples = Instance.evaluate_samples
+    evaluated_counts = []
+
+    def record_count(instance, samples):
+        evaluated_counts.append(samples.num_samples())
+        return evaluate_samples(instance, samples)
+
+    monkeypatch.setattr(Instance, "evaluate_samples", record_count)
+    best = OMMXLeapHybridCQMAdapter.solve(instance)
+    assert evaluated_counts == [3]
+    assert best.feasible
+    assert best.state.entries == expected.state.entries
 
 
 def test_decode_preserves_occurrences():
@@ -463,6 +512,8 @@ def test_decode_rejects_invalid_occurrence_count(count):
     )
     with pytest.raises(OMMXDWaveAdapterError, match="num_occurrences.*row 1"):
         adapter.decode_to_sampleset(samples)
+    with pytest.raises(OMMXDWaveAdapterError, match="num_occurrences.*row 1"):
+        adapter.decode(samples)
 
 
 def test_decode_accepts_integer_valued_counts_and_zero():
