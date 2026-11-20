@@ -411,7 +411,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 "please report it to OMMX."
             )
 
-        expr = self._make_expr(objective)
+        expr = self._make_expr(objective, "objective")
 
         if self.instance.sense == Instance.MINIMIZE:
             pass
@@ -513,7 +513,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 )
 
             # Create dwave expression for the constraint
-            expr = self._make_expr(constraint.function)
+            expr = self._make_expr(constraint.function, str(constraint_id))
 
             # rhs is assumed 0 by dwave
             self.model.add_constraint_from_iterable(
@@ -522,10 +522,18 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 label=str(constraint_id),
             )
 
-    def _make_expr(self, function: Function):
+    def _make_expr(self, function: Function, source: str):
         """Create a dwave expression from an OMMX Function."""
         expr = []
         for ids, coefficient in function.terms.items():
+            if len(ids) == 2:
+                for variable_id in ids:
+                    if self.model.vartype(variable_id) == dimod.REAL:
+                        raise OMMXDWaveAdapterError(
+                            f"D-Wave CQM only supports linear terms for continuous "
+                            f"variables. The quadratic term {ids} in {source} "
+                            f"contains continuous variable {variable_id}."
+                        )
             expr.append((*ids, coefficient))
 
         return expr

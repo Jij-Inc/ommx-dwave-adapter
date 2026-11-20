@@ -15,7 +15,7 @@ from ommx import (
 )
 from ommx.adapter import AdapterNotApplicableError
 
-from ommx_dwave_adapter import OMMXLeapHybridCQMAdapter
+from ommx_dwave_adapter import OMMXDWaveAdapterError, OMMXLeapHybridCQMAdapter
 
 
 def _instance_with_unsupported_special_constraints() -> Instance:
@@ -42,6 +42,31 @@ def test_recommended_preparation_policies_are_independent() -> None:
     assert first is not second
     first.special_constraints = None
     assert second.special_constraints is not None
+
+
+def test_rejects_quadratic_continuous_objective() -> None:
+    instance = Instance.minimize()
+    x = instance.new_continuous("x", lower=-2, upper=2)
+    instance.objective = x * x
+
+    with pytest.raises(
+        OMMXDWaveAdapterError,
+        match=rf"in objective contains continuous variable {x.id}",
+    ):
+        OMMXLeapHybridCQMAdapter(instance)
+
+
+def test_rejects_quadratic_continuous_term_in_lowered_indicator() -> None:
+    instance = Instance.minimize()
+    b = instance.new_binary("b")
+    x = instance.new_continuous("x", lower=-2, upper=2)
+    instance.add_indicator_constraint((b * x <= 1).with_indicator(b))
+
+    with pytest.raises(
+        OMMXDWaveAdapterError,
+        match=rf"in ConstraintID\(\d+\) contains continuous variable {x.id}",
+    ):
+        OMMXLeapHybridCQMAdapter.sample(instance)
 
 
 @pytest.mark.parametrize(
