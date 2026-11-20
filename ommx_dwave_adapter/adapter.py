@@ -40,6 +40,13 @@ _DIMOD_CONSTRAINT_SENSES: dict[Equality, DimodSense] = {
 
 
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
+    """Convert an OMMX instance to a D-Wave constrained quadratic model.
+
+    Continuous variables are supported in linear terms only. Conversion rejects
+    quadratic terms containing them in the objective or any active constraint,
+    including constraints produced by preparation.
+    """
+
     INPUT_CLASS: ClassVar[InstanceClass] = InstanceClass(
         [
             InstanceClassClause(

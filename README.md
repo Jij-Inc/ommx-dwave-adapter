@@ -6,10 +6,6 @@ Currently only implements an adapter to LeapHybridCQMSampler.
 
 Requires Python 3.11 or later and OMMX SDK `>=3.0.0rc1,<4`.
 
-Continuous variables can appear in linear terms. The adapter rejects quadratic
-terms involving a continuous variable when converting the objective or an
-active constraint to a D-Wave CQM, including constraints produced by preparation.
-
 # Usage
 
 `ommx-dwave-adapter` can be installed from PyPI as follows:
