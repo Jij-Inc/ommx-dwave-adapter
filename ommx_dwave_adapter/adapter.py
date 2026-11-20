@@ -78,12 +78,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         )
 
     def __init__(self, ommx_instance: Instance):
-        """
-        :param ommx_instance: The ommx.Instance to sample.
+        """Build the CQM and retain the supplied instance by reference for decoding.
+
+        Keep the instance unchanged from construction until you finish using this
+        adapter, including backend configuration, sampling and decoding. Pass
+        ``copy.copy(ommx_instance)`` if you need to edit the original meanwhile.
         """
         self.instance = ommx_instance
-        self._encoded_instance = copy.copy(ommx_instance)
-        self.require_applicable(self._encoded_instance)
+        self.require_applicable(self.instance)
         self.model = ConstrainedQuadraticModel()
 
         has_continuous = self._set_decision_variables()
@@ -162,6 +164,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         Use this method when the input instance has already been prepared,
         possibly with a custom policy, or already belongs to ``INPUT_CLASS``.
+        Keep the supplied instance unchanged for the duration of this call.
 
         ``diagnostics`` are not available through this Adapter.
         The reserved ``diagnostics`` argument is accepted for compatibility with
@@ -264,6 +267,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         Use this method when the input instance has already been prepared,
         possibly with a custom policy, or already belongs to ``INPUT_CLASS``.
+        Keep the supplied instance unchanged for the duration of this call.
 
         ``diagnostics`` are not available through this Adapter.
         The reserved ``diagnostics`` argument is accepted for compatibility with
@@ -302,7 +306,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         separately optimizing the model.
 
         Each occurrence in the dimod result receives its own OMMX sample ID.
-        Evaluation uses the instance snapshot from which the CQM was built.
+        The adapter evaluates the samples against the instance supplied to its constructor.
 
         Note that alterations to the model may make the decoding process
         incompatible -- decoding will only work if the model still describes
@@ -358,12 +362,12 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             first_id = samples.num_samples()
             size = int(count) if expand_occurrences else 1
             samples.append(range(first_id, first_id + size), state)
-        return self._encoded_instance.evaluate_samples(samples)
+        return self.instance.evaluate_samples(samples)
 
     def _set_decision_variables(self) -> bool:
         """Add active variables and report whether the CQM contains a continuous variable."""
         has_continuous = False
-        for var in self._encoded_instance.active_decision_variables:
+        for var in self.instance.active_decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 kind = dimod.BINARY
                 kind_name = "binary"
@@ -417,7 +421,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return has_continuous
 
     def _set_objective(self):
-        objective = self._encoded_instance.objective
+        objective = self.instance.objective
 
         objective_degree = objective.degree()
         if objective_degree is None:
@@ -433,14 +437,14 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 "please report it to OMMX."
             )
 
-        if self._encoded_instance.sense == Instance.MINIMIZE:
+        if self.instance.sense == Instance.MINIMIZE:
             expr = self._make_expr(objective)
-        elif self._encoded_instance.sense == Instance.MAXIMIZE:
+        elif self.instance.sense == Instance.MAXIMIZE:
             expr = self._make_expr(objective, negate=True)
         else:
             raise AssertionError(
                 "Unsupported objective sense reached after applicability validation: "
-                f"{self._encoded_instance.sense}. This may indicate an OMMX implementation "
+                f"{self.instance.sense}. This may indicate an OMMX implementation "
                 "bug; please report it to OMMX."
             )
 
@@ -448,7 +452,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.model.set_objective(expr)
 
     def _set_constraints(self):
-        unsupported = self._encoded_instance.active_constraint_kinds - {
+        unsupported = self.instance.active_constraint_kinds - {
             ConstraintKind.Regular,
             ConstraintKind.OneHot,
         }
@@ -457,7 +461,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 f"Unsupported active constraint kinds: {unsupported}"
             )
 
-        active = self._encoded_instance.active_constraints
+        active = self.instance.active_constraints
         # Handle OneHot constraints (first-class constraint type)
         one_hot_variable_ids = set()
         selected_one_hot_constraints = []

@@ -1,3 +1,4 @@
+import copy
 from unittest.mock import MagicMock, Mock
 
 import dimod
@@ -527,16 +528,24 @@ def test_decode_accepts_integer_valued_counts_and_zero():
     assert adapter.decode_to_sampleset(samples).objectives == {0: 1, 1: 1}
 
 
-def test_decode_uses_instance_as_encoded():
+def test_decode_with_caller_supplied_copy(monkeypatch):
     instance = Instance.maximize()
     x = instance.new_binary("x")
     instance.objective = x
-    adapter = OMMXLeapHybridCQMAdapter(instance)
+    supplied = copy.copy(instance)
+    adapter = OMMXLeapHybridCQMAdapter(supplied)
     samples = dimod.ExactCQMSolver().sample_cqm(adapter.sampler_input)
 
     instance.objective = 1 - x
     instance.add_constraint(x == 0)
 
+    evaluate_samples = Instance.evaluate_samples
+
+    def evaluate_supplied(model, samples):
+        assert model is supplied
+        return evaluate_samples(model, samples)
+
+    monkeypatch.setattr(Instance, "evaluate_samples", evaluate_supplied)
     best = adapter.decode(samples)
     assert best.state.entries == {x.id: 1}
     assert best.objective == 1
