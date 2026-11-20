@@ -39,3 +39,5 @@ print(ommx_sampleset)
 When accessing the dimod model through `sampler_input`, use the integer OMMX
 variable ID as the variable label and `str(constraint_id)` as the constraint
 label (for example, `"ConstraintID(7)"` or `"OneHotConstraintID(2)"`).
+For an active binary variable with equal lower and upper bounds, the adapter
+adds an equality labeled `fixed_binary_<variable ID>` to enforce the fixed value.

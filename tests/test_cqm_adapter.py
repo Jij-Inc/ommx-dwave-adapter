@@ -2,10 +2,12 @@ import dimod
 import pytest
 from dimod.sym import Sense
 from ommx import (
+    Bound,
     ConstraintKind,
     DecisionVariable,
     Function,
     Instance,
+    Kind,
     OneHotConstraint,
     OneHotConstraintID,
 )
@@ -49,6 +51,22 @@ def test_accepts_dwave_variable_boundaries(variable):
 
     assert report.is_member
     OMMXLeapHybridCQMAdapter(instance)
+
+
+@pytest.mark.parametrize("fixed_value", [0, 1])
+def test_fixed_binary_bound_preserves_feasible_set(fixed_value):
+    x = DecisionVariable(7, Kind.Binary, Bound(fixed_value, fixed_value))
+    instance = Instance.from_components(
+        decision_variables=[x],
+        objective=x,
+        active_constraints={},
+        sense=OMMXSense.Maximize if fixed_value == 0 else OMMXSense.Minimize,
+    )
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.ExactCQMSolver().sample_cqm(adapter.sampler_input)
+    feasible = samples.filter(lambda row: row.is_feasible)
+    assert [row[x.id] for row in feasible.samples()] == [fixed_value]
+    assert adapter.decode(feasible).state.entries == {x.id: fixed_value}
 
 
 @pytest.mark.parametrize(
@@ -397,6 +415,36 @@ def test_decode():
     assert best.state.entries[3] == pytest.approx(1)
     assert best.state.entries[4] == pytest.approx(0)
     assert best.state.entries[5] == pytest.approx(0)
+
+
+def test_decode_preserves_occurrences():
+    instance = Instance.maximize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{x.id: 0}, {x.id: 1}], adapter.sampler_input, num_occurrences=[1, 3]
+    )
+
+    decoded = adapter.decode_to_sampleset(samples)
+    assert decoded.num_samples() == 4
+    assert decoded.objectives == {0: 0, 1: 1, 2: 1, 3: 1}
+
+
+def test_decode_uses_instance_as_encoded():
+    instance = Instance.maximize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.ExactCQMSolver().sample_cqm(adapter.sampler_input)
+
+    instance.objective = 1 - x
+    instance.add_constraint(x == 0)
+
+    best = adapter.decode(samples)
+    assert best.state.entries == {x.id: 1}
+    assert best.objective == 1
+    assert best.feasible
 
 
 def test_decode_no_constraints():

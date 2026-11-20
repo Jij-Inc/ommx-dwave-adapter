@@ -16,6 +16,7 @@ from ommx import (
     Kind,
     PolynomialRequirement,
     PreparationPolicy,
+    Samples,
     SampleSet,
     Sense,
     Solution,
@@ -78,9 +79,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         """
         :param ommx_instance: The ommx.Instance to sample.
         """
-        self.require_applicable(ommx_instance)
-
         self.instance = ommx_instance
+        self._encoded_instance = copy.copy(ommx_instance)
+        self.require_applicable(self._encoded_instance)
         self.model = ConstrainedQuadraticModel()
 
         self._set_decision_variables()
@@ -307,6 +308,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         `sampler_input` for further adjustment of the sampler parameters, and
         separately optimizing the model.
 
+        Each occurrence in the dimod result receives its own OMMX sample ID.
+        Evaluation uses the instance snapshot from which the CQM was built.
+
         Note that alterations to the model may make the decoding process
         incompatible -- decoding will only work if the model still describes
         effectively the same problem as the OMMX instance used to create the
@@ -332,18 +336,15 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>> dimod_sampleset = sampler.sample_cqm(model) # doctest: +SKIP
             >>> sample = adapter.decode_to_sampleset(dimod_sampleset)  # doctest: +SKIP
         """
-        # the only type info we have with vars in data.variables is that they're
-        # Hashable. We know they are integers but we hash them anyway for type
-        # safety. As we stored our variables as integer the hash should still be
-        # our IDs
-        samples = {
-            i: {
-                var.__hash__(): float(coeff)
-                for var, coeff in zip(data.variables, sample)
+        samples = Samples({})
+        for values, count in zip(data.record.sample, data.record.num_occurrences):
+            state = {
+                var.__hash__(): float(value)
+                for var, value in zip(data.variables, values)
             }
-            for i, sample in enumerate(data.record.sample)
-        }
-        return self.instance.evaluate_samples(samples)
+            first_id = samples.num_samples()
+            samples.append(range(first_id, first_id + int(count)), state)
+        return self._encoded_instance.evaluate_samples(samples)
 
     def decode(self, data: dimod.SampleSet) -> Solution:
         """Convert a dimod.SampleSet model matching this instance to an ommx.Solution."""
@@ -351,12 +352,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return sample_set.best_feasible
 
     def _set_decision_variables(self):
-        for var in self.instance.active_decision_variables:
+        for var in self._encoded_instance.active_decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 kind = dimod.BINARY
                 kind_name = "binary"
-                # dimod ignores bounds passed to add_variable for binary variables,
-                # but keep explicit limits here for consistency with the other kinds.
                 lower_limit = 0
                 upper_limit = 1
             elif var.kind == DecisionVariable.INTEGER:
@@ -393,9 +392,17 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 lower_bound=var.bound.lower,
                 upper_bound=var.bound.upper,
             )
+            if kind == dimod.BINARY and var.bound.lower == var.bound.upper:
+                # dimod ignores binary bounds, so enforce a singleton domain in the CQM.
+                self.model.add_constraint_from_iterable(
+                    [(var.id, 1.0)],
+                    DimodSense.Eq,
+                    rhs=var.bound.lower,
+                    label=f"fixed_binary_{var.id}",
+                )
 
     def _set_objective(self):
-        objective = self.instance.objective
+        objective = self._encoded_instance.objective
 
         objective_degree = objective.degree()
         if objective_degree is None:
@@ -413,9 +420,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         expr = self._make_expr(objective, "objective")
 
-        if self.instance.sense == Instance.MINIMIZE:
+        if self._encoded_instance.sense == Instance.MINIMIZE:
             pass
-        elif self.instance.sense == Instance.MAXIMIZE:
+        elif self._encoded_instance.sense == Instance.MAXIMIZE:
             # multiply all coefficients by -1:
             # this takes all except the last element from the tuple and concatenates it
             # with the last element multiplied with -1 to get a new tuple
@@ -423,7 +430,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         else:
             raise AssertionError(
                 "Unsupported objective sense reached after applicability validation: "
-                f"{self.instance.sense}. This may indicate an OMMX implementation "
+                f"{self._encoded_instance.sense}. This may indicate an OMMX implementation "
                 "bug; please report it to OMMX."
             )
 
@@ -431,7 +438,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.model.set_objective(expr)
 
     def _set_constraints(self):
-        unsupported = self.instance.active_constraint_kinds - {
+        unsupported = self._encoded_instance.active_constraint_kinds - {
             ConstraintKind.Regular,
             ConstraintKind.OneHot,
         }
@@ -440,7 +447,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 f"Unsupported active constraint kinds: {unsupported}"
             )
 
-        active = self.instance.active_constraints
+        active = self._encoded_instance.active_constraints
         # Handle OneHot constraints (first-class constraint type)
         one_hot_variable_ids = set()
         selected_one_hot_constraints = []
