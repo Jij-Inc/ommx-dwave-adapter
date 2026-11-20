@@ -1,4 +1,5 @@
 import copy
+from itertools import chain
 from typing import ClassVar
 
 import dimod
@@ -85,9 +86,11 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.require_applicable(self._encoded_instance)
         self.model = ConstrainedQuadraticModel()
 
-        self._set_decision_variables()
+        has_continuous = self._set_decision_variables()
         self._set_objective()
         self._set_constraints()
+        if has_continuous:
+            self._validate_continuous_terms()
 
     @classmethod
     def sample(
@@ -358,7 +361,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         sample_set = self.decode_to_sampleset(data)
         return sample_set.best_feasible
 
-    def _set_decision_variables(self):
+    def _set_decision_variables(self) -> bool:
+        """Add active variables and report whether the CQM contains a continuous variable."""
+        has_continuous = False
         for var in self._encoded_instance.active_decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 kind = dimod.BINARY
@@ -372,6 +377,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 upper_limit = _MAX_ABS_INTEGER_BOUND
             elif var.kind == DecisionVariable.CONTINUOUS:
                 kind = dimod.REAL
+                has_continuous = True
                 kind_name = "continuous"
                 lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
                 upper_limit = _MAX_ABS_CONTINUOUS_BOUND
@@ -407,6 +413,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                     rhs=var.bound.lower,
                     label=f"fixed_binary_{var.id}",
                 )
+        return has_continuous
 
     def _set_objective(self):
         objective = self._encoded_instance.objective
@@ -425,7 +432,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 "please report it to OMMX."
             )
 
-        expr = self._make_expr(objective, "objective")
+        expr = self._make_expr(objective)
 
         if self._encoded_instance.sense == Instance.MINIMIZE:
             pass
@@ -527,7 +534,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 )
 
             # Create dwave expression for the constraint
-            expr = self._make_expr(constraint.function, str(constraint_id))
+            expr = self._make_expr(constraint.function)
 
             # rhs is assumed 0 by dwave
             self.model.add_constraint_from_iterable(
@@ -536,11 +543,22 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 label=str(constraint_id),
             )
 
-    def _make_expr(self, function: Function, source: str):
+    def _make_expr(self, function: Function):
         """Create a dwave expression from an OMMX Function."""
-        expr = []
-        for ids, coefficient in function.terms.items():
-            if len(ids) == 2:
+        return [(*ids, coefficient) for ids, coefficient in function.terms.items()]
+
+    def _validate_continuous_terms(self) -> None:
+        if not self.model.num_quadratic_variables(dimod.REAL, include_objective=True):
+            return
+
+        constraints = (
+            (label, row.lhs) for label, row in self.model.constraints.items()
+        )
+        for source, expression in chain(
+            [("objective", self.model.objective)], constraints
+        ):
+            for u, v, _ in expression.iter_quadratic():
+                ids = tuple(sorted((u, v)))
                 for variable_id in ids:
                     if self.model.vartype(variable_id) == dimod.REAL:
                         raise OMMXDWaveAdapterError(
@@ -548,6 +566,6 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                             f"variables. The quadratic term {ids} in {source} "
                             f"contains continuous variable {variable_id}."
                         )
-            expr.append((*ids, coefficient))
-
-        return expr
+        raise OMMXDWaveAdapterError(
+            "D-Wave CQM only supports linear terms for continuous variables."
+        )
