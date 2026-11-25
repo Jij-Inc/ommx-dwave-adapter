@@ -1,11 +1,14 @@
 import copy
-from typing import ClassVar
+from itertools import chain
+from typing import ClassVar, final
 
 import dimod
+import numpy as np
 from dimod import ConstrainedQuadraticModel
 from dimod.sym import Sense as DimodSense
 from dwave.system import LeapHybridCQMSampler
 from ommx import (
+    ConstraintKind,
     DecisionVariable,
     Equality,
     Function,
@@ -15,10 +18,10 @@ from ommx import (
     Kind,
     PolynomialRequirement,
     PreparationPolicy,
+    Samples,
     SampleSet,
     Sense,
     Solution,
-    SpecialConstraintKind,
     SpecialConstraintPreparation,
 )
 from ommx.adapter import DiagnosticsSink, SamplerAdapter
@@ -36,7 +39,15 @@ _DIMOD_CONSTRAINT_SENSES: dict[Equality, DimodSense] = {
 }
 
 
+@final
 class OMMXLeapHybridCQMAdapter(SamplerAdapter):
+    """Convert an OMMX instance to a D-Wave constrained quadratic model.
+
+    Continuous variables are supported in linear terms only. Conversion rejects
+    quadratic terms containing them in the objective or any active constraint,
+    including constraints produced by preparation.
+    """
+
     INPUT_CLASS: ClassVar[InstanceClass] = InstanceClass(
         [
             InstanceClassClause(
@@ -68,24 +79,28 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         return PreparationPolicy(
             special_constraints=SpecialConstraintPreparation.lower_special_constraints(
                 kinds={
-                    SpecialConstraintKind.Indicator,
-                    SpecialConstraintKind.Sos1,
+                    ConstraintKind.Indicator,
+                    ConstraintKind.Sos1,
                 }
             )
         )
 
     def __init__(self, ommx_instance: Instance):
-        """
-        :param ommx_instance: The ommx.Instance to sample.
-        """
-        self.require_applicable(ommx_instance)
+        """Build the CQM and retain the supplied instance by reference for decoding.
 
+        Keep the instance unchanged from construction until you finish using this
+        adapter, including backend configuration, sampling and decoding. Pass
+        ``copy.copy(ommx_instance)`` if you need to edit the original meanwhile.
+        """
         self.instance = ommx_instance
+        self.require_applicable(self.instance)
         self.model = ConstrainedQuadraticModel()
 
-        self._set_decision_variables()
+        has_continuous = self._set_decision_variables()
         self._set_objective()
         self._set_constraints()
+        if has_continuous:
+            self._validate_continuous_terms()
 
     @classmethod
     def sample(
@@ -110,7 +125,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The ommx.Instance to prepare and sample.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
-        :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
@@ -157,6 +172,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         Use this method when the input instance has already been prepared,
         possibly with a custom policy, or already belongs to ``INPUT_CLASS``.
+        Keep the supplied instance unchanged for the duration of this call.
 
         ``diagnostics`` are not available through this Adapter.
         The reserved ``diagnostics`` argument is accepted for compatibility with
@@ -168,33 +184,27 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The exact D-Wave CQM Adapter input to sample.
         :param token: Token for instantiating the D-Wave sampler.
-        :param time_limit: Maximum solver time in seconds.
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
         """
-        # Dwave appears to be able to read configuration from a config file
-        # automatically, and this apparently includes the token. Users may want
-        # to use the file as a way to pass the token, so we can't necessarily
-        # give an error on an empty token
-
-        # TODO: Update the diagnostics docstrings when support is implemented.
-        _ = diagnostics
         adapter = cls(ommx_instance)
-        model = adapter.sampler_input
-        sampler = LeapHybridCQMSampler(token=token)
+        samples = adapter._sample_cqm(token=token, time_limit=time_limit, label=label)
+        return adapter.decode_to_sampleset(samples)
 
-        # TODO is this necessary or will it always just go for the minimum if no time limit is set?
-        if (
-            time_limit is None
-            or time_limit < sampler.properties["minimum_time_limit_s"]
-        ):
-            time_limit = sampler.properties["minimum_time_limit_s"]
-
-        dimod_sampleset = sampler.sample_cqm(model, time_limit=time_limit, label=label)
-        dimod_sampleset.resolve()
-
-        return adapter.decode_to_sampleset(dimod_sampleset)
+    def _sample_cqm(
+        self, *, token: str | None, time_limit: int | None, label: str | None
+    ) -> dimod.SampleSet:
+        # An omitted token lets Ocean read the credentials from the D-Wave config file.
+        with LeapHybridCQMSampler(token=token) as sampler:
+            if time_limit is not None:
+                time_limit = max(time_limit, sampler.properties["minimum_time_limit_s"])
+            samples = sampler.sample_cqm(
+                self.sampler_input, time_limit=time_limit, label=label
+            )
+            samples.resolve()
+        return samples
 
     @classmethod
     def solve(
@@ -219,7 +229,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The ommx.Instance to prepare and solve.
         :param token: Token for instantiating the DWave sampler, obtained from your Leap account.
-        :param time_limit: Maximum time the solver will use, in seconds. Must be greater than the minimum time limit specified by DWave (currently 5)
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
@@ -266,6 +276,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         Use this method when the input instance has already been prepared,
         possibly with a custom policy, or already belongs to ``INPUT_CLASS``.
+        Keep the supplied instance unchanged for the duration of this call.
 
         ``diagnostics`` are not available through this Adapter.
         The reserved ``diagnostics`` argument is accepted for compatibility with
@@ -277,27 +288,28 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
         :param ommx_instance: The exact D-Wave CQM Adapter input to solve.
         :param token: Token for instantiating the D-Wave sampler.
-        :param time_limit: Maximum solver time in seconds.
+        :param time_limit: Solver time limit in seconds. If omitted, Ocean chooses the minimum for this model.
         :param label: Optional label to tag the problem with.
         :param diagnostics: Reserved for OMMX SamplerAdapter compatibility;
           currently unused.
         """
-        return cls.sample_without_preparation(
-            ommx_instance,
-            token=token,
-            time_limit=time_limit,
-            label=label,
-            diagnostics=diagnostics,
-        ).best_feasible
+        adapter = cls(ommx_instance)
+        samples = adapter._sample_cqm(token=token, time_limit=time_limit, label=label)
+        return adapter.decode(samples)
 
     @property
     def sampler_input(self) -> ConstrainedQuadraticModel:
-        """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
+        """The dimod CQM built from this instance.
+
+        Variable labels are integer OMMX IDs. OMMX constraint labels are
+        ``str(constraint_id)``, such as ``"ConstraintID(7)"`` or ``"OneHotConstraintID(2)"``.
+        An equality fixing a binary variable is labeled ``fixed_binary_<variable ID>``.
+        """
         return self.model
 
     @property
     def solver_input(self) -> ConstrainedQuadraticModel:
-        """The dimod.ConstrainedQuadraticModel representing this OMMX instance"""
+        """The same dimod CQM as :attr:`sampler_input`."""
         return self.model
 
     def decode_to_sampleset(self, data: dimod.SampleSet) -> SampleSet:
@@ -306,6 +318,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         This method is intended to be used if the model has been acquired with
         `sampler_input` for further adjustment of the sampler parameters, and
         separately optimizing the model.
+
+        Each occurrence in the dimod result receives its own OMMX sample ID.
+        The adapter evaluates the samples against the instance supplied to its constructor.
 
         Note that alterations to the model may make the decoding process
         incompatible -- decoding will only work if the model still describes
@@ -327,31 +342,49 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             >>>
             >>> adapter = OMMXLeapHybridCQMAdapter(ommx_instance)
             >>> model = adapter.sampler_input # obtain dimod.ConstrainedQuadraticModel
-            >>> sampler = LeapHybridCQMSampler() # doctest: +SKIP
             >>> # ... some modification of the sampler parameters
-            >>> dimod_sampleset = sampler.sample_cqm(model) # doctest: +SKIP
+            >>> with LeapHybridCQMSampler() as sampler:  # doctest: +SKIP
+            ...     dimod_sampleset = sampler.sample_cqm(model)
+            ...     dimod_sampleset.resolve()
             >>> sample = adapter.decode_to_sampleset(dimod_sampleset)  # doctest: +SKIP
         """
-        # the only type info we have with vars in data.variables is that they're
-        # Hashable. We know they are integers but we hash them anyway for type
-        # safety. As we stored our variables as integer the hash should still be
-        # our IDs
-        samples = {
-            i: {
-                var.__hash__(): float(coeff)
-                for var, coeff in zip(data.variables, sample)
-            }
-            for i, sample in enumerate(data.record.sample)
-        }
-        return self.instance.evaluate_samples(samples)
+        return self._evaluate_samples(data, expand_occurrences=True)
 
     def decode(self, data: dimod.SampleSet) -> Solution:
-        """Convert a dimod.SampleSet model matching this instance to an ommx.Solution."""
-        sample_set = self.decode_to_sampleset(data)
-        return sample_set.best_feasible
+        """Return the best feasible solution, evaluating each observed row once."""
+        return self._evaluate_samples(data, expand_occurrences=False).best_feasible
 
-    def _set_decision_variables(self):
-        for var in self.instance.used_decision_variables:
+    def _evaluate_samples(
+        self, data: dimod.SampleSet, *, expand_occurrences: bool
+    ) -> SampleSet:
+        samples = Samples({})
+        for row, (values, count) in enumerate(
+            zip(data.record.sample, data.record.num_occurrences)
+        ):
+            if isinstance(count, (float, np.floating)) and count.is_integer():
+                count = int(count)
+            if not isinstance(count, (int, np.integer)) or count < 0:
+                raise OMMXDWaveAdapterError(
+                    f"Expected a nonnegative integer num_occurrences in row {row}, got {count!r}."
+                )
+            if count == 0:
+                continue
+            # dimod types labels as Hashable. This adapter uses integer OMMX IDs
+            # and takes their hashes here. Large integer IDs can hash to a
+            # different value (see issue #9).
+            state = {
+                var.__hash__(): float(value)
+                for var, value in zip(data.variables, values)
+            }
+            first_id = samples.num_samples()
+            size = int(count) if expand_occurrences else 1
+            samples.append(range(first_id, first_id + size), state)
+        return self.instance.evaluate_samples(samples)
+
+    def _set_decision_variables(self) -> bool:
+        """Add active variables and report whether the CQM contains a continuous variable."""
+        has_continuous = False
+        for var in self.instance.active_decision_variables:
             if var.kind == DecisionVariable.BINARY:
                 kind = dimod.BINARY
                 kind_name = "binary"
@@ -366,6 +399,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 upper_limit = _MAX_ABS_INTEGER_BOUND
             elif var.kind == DecisionVariable.CONTINUOUS:
                 kind = dimod.REAL
+                has_continuous = True
                 kind_name = "continuous"
                 lower_limit = -_MAX_ABS_CONTINUOUS_BOUND
                 upper_limit = _MAX_ABS_CONTINUOUS_BOUND
@@ -376,23 +410,34 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                     "bug; please report it to OMMX."
                 )
 
-            if var.bound.lower < lower_limit:
+            bound = var.bound
+            lower, upper = bound.lower, bound.upper
+            if lower < lower_limit:
                 raise OMMXDWaveAdapterError(
                     f"D-Wave CQM {kind_name} variable {var.id} has lower "
-                    f"bound {var.bound.lower}, below {lower_limit}."
+                    f"bound {lower}, below {lower_limit}."
                 )
-            if var.bound.upper > upper_limit:
+            if upper > upper_limit:
                 raise OMMXDWaveAdapterError(
                     f"D-Wave CQM {kind_name} variable {var.id} has upper "
-                    f"bound {var.bound.upper}, above {upper_limit}."
+                    f"bound {upper}, above {upper_limit}."
                 )
 
             self.model.add_variable(
                 kind,
                 var.id,
-                lower_bound=var.bound.lower,
-                upper_bound=var.bound.upper,
+                lower_bound=lower,
+                upper_bound=upper,
             )
+            if kind == dimod.BINARY and lower == upper:
+                # dimod ignores binary bounds, so enforce a singleton domain in the CQM.
+                self.model.add_constraint_from_iterable(
+                    [(var.id, 1.0)],
+                    DimodSense.Eq,
+                    rhs=lower,
+                    label=f"fixed_binary_{var.id}",
+                )
+        return has_continuous
 
     def _set_objective(self):
         objective = self.instance.objective
@@ -411,15 +456,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 "please report it to OMMX."
             )
 
-        expr = self._make_expr(objective)
-
         if self.instance.sense == Instance.MINIMIZE:
-            pass
+            expr = self._make_expr(objective)
         elif self.instance.sense == Instance.MAXIMIZE:
-            # multiply all coefficients by -1:
-            # this takes all except the last element from the tuple and concatenates it
-            # with the last element multiplied with -1 to get a new tuple
-            expr = [term[:-1] + (-1 * term[-1],) for term in expr]
+            expr = self._make_expr(objective, negate=True)
         else:
             raise AssertionError(
                 "Unsupported objective sense reached after applicability validation: "
@@ -431,15 +471,25 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         self.model.set_objective(expr)
 
     def _set_constraints(self):
+        unsupported = self.instance.active_constraint_kinds - {
+            ConstraintKind.Regular,
+            ConstraintKind.OneHot,
+        }
+        if unsupported:
+            raise OMMXDWaveAdapterError(
+                f"Unsupported active constraint kinds: {unsupported}"
+            )
+
+        active = self.instance.active_constraints
         # Handle OneHot constraints (first-class constraint type)
         one_hot_variable_ids = set()
         selected_one_hot_constraints = []
         regularized_one_hot_constraints = []
         # Prefer constraints with more variables. The stable sort keeps the order
-        # from one_hot_constraints when two constraints have the same length.
+        # from the OneHot collection when two constraints have the same length.
         # This selection policy follows the existing ommx-da4-adapter behavior.
         sorted_one_hot_constraints = sorted(
-            self.instance.one_hot_constraints.items(),
+            active.of_kind(ConstraintKind.OneHot).items(),
             key=lambda item: len(item[1].variables),
             reverse=True,
         )
@@ -457,7 +507,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
         for constraint_id, constraint in selected_one_hot_constraints:
             self.model.add_discrete_from_iterable(
                 constraint.variables,
-                label=f"onehot_{constraint_id}",
+                label=str(constraint_id),
                 check_overlaps=False,
             )
 
@@ -466,10 +516,10 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 ((variable_id, 1.0) for variable_id in constraint.variables),
                 DimodSense.Eq,
                 rhs=1.0,
-                label=f"onehot_{constraint_id}",
+                label=str(constraint_id),
             )
 
-        for constraint_id, constraint in self.instance.constraints.items():
+        for constraint_id, constraint in active.of_kind(ConstraintKind.Regular).items():
             if constraint.equality not in _DIMOD_CONSTRAINT_SENSES:
                 raise AssertionError(
                     "Unsupported constraint equality reached after applicability "
@@ -495,7 +545,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
 
             # Only constant case
             if constraint_degree == 0:
-                if constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE).feasible:
+                evaluated = constraint.evaluate({}, atol=ABSOLUTE_TOLERANCE)
+                if evaluated.is_feasible(atol=ABSOLUTE_TOLERANCE):
                     continue
                 raise OMMXDWaveAdapterError(
                     f"Infeasible constant constraint was found: id {constraint_id}"
@@ -508,13 +559,34 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             self.model.add_constraint_from_iterable(
                 expr,
                 _DIMOD_CONSTRAINT_SENSES[constraint.equality],
-                label=constraint_id,
+                label=str(constraint_id),
             )
 
-    def _make_expr(self, function: Function):
-        """Create a dwave expression from an OMMX Function."""
-        expr = []
-        for ids, coefficient in function.terms.items():
-            expr.append((*ids, coefficient))
+    def _make_expr(self, function: Function, *, negate: bool = False):
+        terms = function.terms.items()
+        if negate:
+            return ((*ids, -coefficient) for ids, coefficient in terms)
+        return ((*ids, coefficient) for ids, coefficient in terms)
 
-        return expr
+    def _validate_continuous_terms(self) -> None:
+        if not self.model.num_quadratic_variables(dimod.REAL, include_objective=True):
+            return
+
+        constraints = (
+            (label, row.lhs) for label, row in self.model.constraints.items()
+        )
+        for source, expression in chain(
+            [("objective", self.model.objective)], constraints
+        ):
+            for u, v, _ in expression.iter_quadratic():
+                ids = tuple(sorted((u, v)))
+                for variable_id in ids:
+                    if self.model.vartype(variable_id) == dimod.REAL:
+                        raise OMMXDWaveAdapterError(
+                            f"D-Wave CQM only supports linear terms for continuous "
+                            f"variables. The quadratic term {ids} in {source} "
+                            f"contains continuous variable {variable_id}."
+                        )
+        raise OMMXDWaveAdapterError(
+            "D-Wave CQM only supports linear terms for continuous variables."
+        )

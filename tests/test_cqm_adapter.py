@@ -1,11 +1,18 @@
+import copy
+from unittest.mock import MagicMock, Mock
+
 import dimod
 import pytest
 from dimod.sym import Sense
 from ommx import (
+    Bound,
+    ConstraintKind,
     DecisionVariable,
     Function,
     Instance,
+    Kind,
     OneHotConstraint,
+    OneHotConstraintID,
 )
 from ommx import (
     Sense as OMMXSense,
@@ -39,7 +46,7 @@ def test_accepts_dwave_variable_boundaries(variable):
     instance = Instance.from_components(
         decision_variables=[variable],
         objective=variable,
-        constraints={},
+        active_constraints={},
         sense=OMMXSense.Minimize,
     )
 
@@ -47,6 +54,22 @@ def test_accepts_dwave_variable_boundaries(variable):
 
     assert report.is_member
     OMMXLeapHybridCQMAdapter(instance)
+
+
+@pytest.mark.parametrize("fixed_value", [0, 1])
+def test_fixed_binary_bound_preserves_feasible_set(fixed_value):
+    x = DecisionVariable(7, Kind.Binary, Bound(fixed_value, fixed_value))
+    instance = Instance.from_components(
+        decision_variables=[x],
+        objective=x,
+        active_constraints={},
+        sense=OMMXSense.Maximize if fixed_value == 0 else OMMXSense.Minimize,
+    )
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.ExactCQMSolver().sample_cqm(adapter.sampler_input)
+    feasible = samples.filter(lambda row: row.is_feasible)
+    assert [row[x.id] for row in feasible.samples()] == [fixed_value]
+    assert adapter.decode(feasible).state.entries == {x.id: fixed_value}
 
 
 @pytest.mark.parametrize(
@@ -92,7 +115,7 @@ def test_rejects_out_of_range_dwave_variable_bound_during_conversion(
     instance = Instance.from_components(
         decision_variables=[variable],
         objective=variable,
-        constraints={},
+        active_constraints={},
         sense=OMMXSense.Minimize,
     )
 
@@ -114,7 +137,7 @@ def test_rejects_default_unbounded_dwave_variable(variable, kind):
     instance = Instance.from_components(
         decision_variables=[variable],
         objective=variable,
-        constraints={},
+        active_constraints={},
         sense=OMMXSense.Minimize,
     )
 
@@ -133,7 +156,7 @@ def test_skips_feasible_constant_constraints():
     instance = Instance.from_components(
         decision_variables=[x],
         objective=x,
-        constraints={
+        active_constraints={
             0: Function(ABSOLUTE_TOLERANCE / 2) == 0,
             1: Function(-ABSOLUTE_TOLERANCE / 2) == 0,
             2: Function(ABSOLUTE_TOLERANCE / 2) <= 0,
@@ -160,11 +183,11 @@ def test_rejects_infeasible_constant_constraint(constraint):
     instance = Instance.from_components(
         decision_variables=[x],
         objective=x,
-        constraints={7: constraint},
+        active_constraints={7: constraint},
         sense=OMMXSense.Minimize,
     )
 
-    with pytest.raises(OMMXDWaveAdapterError, match="id 7"):
+    with pytest.raises(OMMXDWaveAdapterError, match=r"id ConstraintID\(7\)"):
         OMMXLeapHybridCQMAdapter(instance)
 
 
@@ -187,7 +210,7 @@ def test_instance_to_cqm_model():
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints={0: constraint},
+        active_constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -200,10 +223,12 @@ def test_instance_to_cqm_model():
     assert model.objective.linear == {x[i].id: -p[i] for i in range(N)}
     assert model.objective.offset == 0.0
 
-    assert model.constraints[0].sense == Sense.Le
-    assert model.constraints[0].lhs.offset == -W
-    assert model.constraints[0].lhs.linear == {x[i].id: w[i] for i in range(N)}
-    assert model.constraints[0].rhs == 0
+    assert model.constraints["ConstraintID(0)"].sense == Sense.Le
+    assert model.constraints["ConstraintID(0)"].lhs.offset == -W
+    assert model.constraints["ConstraintID(0)"].lhs.linear == {
+        x[i].id: w[i] for i in range(N)
+    }
+    assert model.constraints["ConstraintID(0)"].rhs == 0
 
 
 def test_encode_single_var_types():
@@ -213,7 +238,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints={},
+        active_constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -229,7 +254,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints={},
+        active_constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -247,7 +272,7 @@ def test_encode_single_var_types():
     instance = Instance.from_components(
         decision_variables=xs,
         objective=sum(ws[i] * xs[i] for i in range(N)),
-        constraints={},
+        active_constraints={},
         sense=Instance.MINIMIZE,
     )
 
@@ -270,7 +295,7 @@ def test_encode_multi_variable_types():
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x + y * z,
-        constraints={0: constraint_1, 1: constraint_2},
+        active_constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MINIMIZE,
     )
 
@@ -282,8 +307,8 @@ def test_encode_multi_variable_types():
     expected.set_objective(dimod_x + dimod_y * dimod_z)
     # OMMX will have automatically converted the expression `x + z >= A` into a
     # `<= 0` form. So it's equivalent to `- x - z + A <= 0  `
-    expected.add_constraint(-dimod_x - dimod_z + A <= 0, label=0)
-    expected.add_constraint(dimod_z - 2 == 0, label=1)
+    expected.add_constraint(-dimod_x - dimod_z + A <= 0, label="ConstraintID(0)")
+    expected.add_constraint(dimod_z - 2 == 0, label="ConstraintID(1)")
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     cqm = adapter.sampler_input
@@ -307,8 +332,8 @@ def test_encode_maximize():
     constraint_2 = z == 2
     instance = Instance.from_components(
         decision_variables=[x, y, z],
-        objective=x + y * z,
-        constraints={0: constraint_1, 1: constraint_2},
+        objective=x + y * z + 3,
+        active_constraints={0: constraint_1, 1: constraint_2},
         sense=Instance.MAXIMIZE,
     )
 
@@ -316,9 +341,9 @@ def test_encode_maximize():
     dimod_x = dimod.Real(0, lower_bound=-10, upper_bound=10)
     dimod_y = dimod.Binary(1)
     dimod_z = dimod.Integer(2, lower_bound=1, upper_bound=10)
-    expected.set_objective(-dimod_x - dimod_y * dimod_z)
-    expected.add_constraint(-dimod_x - dimod_z + A <= 0, label=0)
-    expected.add_constraint(dimod_z - 2 == 0, label=1)
+    expected.set_objective(-dimod_x - dimod_y * dimod_z - 3)
+    expected.add_constraint(-dimod_x - dimod_z + A <= 0, label="ConstraintID(0)")
+    expected.add_constraint(dimod_z - 2 == 0, label="ConstraintID(1)")
 
     adapter = OMMXLeapHybridCQMAdapter(instance)
     cqm = adapter.sampler_input
@@ -335,7 +360,7 @@ def test_encode_quadratic():
     instance = Instance.from_components(
         decision_variables=[x, y, z],
         objective=x * y + z,
-        constraints={0: constraint},
+        active_constraints={0: constraint},
         sense=Instance.MINIMIZE,
     )
 
@@ -347,7 +372,9 @@ def test_encode_quadratic():
     dimod_y = dimod.Integer(1, lower_bound=10, upper_bound=20)
     dimod_z = dimod.Integer(2, lower_bound=10, upper_bound=20)
     expected.set_objective(dimod_x * dimod_y + dimod_z)
-    expected.add_constraint(-dimod_x - dimod_y * dimod_z + 10 <= 0, label=0)
+    expected.add_constraint(
+        -dimod_x - dimod_y * dimod_z + 10 <= 0, label="ConstraintID(0)"
+    )
 
     assert cqm.is_equal(expected)
 
@@ -370,7 +397,7 @@ def test_decode():
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(p[i] * x[i] for i in range(N)),
-        constraints={0: constraint},
+        active_constraints={0: constraint},
         sense=Instance.MAXIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -393,6 +420,138 @@ def test_decode():
     assert best.state.entries[5] == pytest.approx(0)
 
 
+@pytest.mark.parametrize(("time_limit", "expected"), [(None, None), (3, 5), (10, 10)])
+def test_sample_forwards_time_limit(monkeypatch, time_limit, expected):
+    instance = Instance.minimize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    sampler = MagicMock()
+    sampler.__enter__.return_value = sampler
+    sampler.properties = {"minimum_time_limit_s": 5}
+    sampler.sample_cqm.return_value = dimod.SampleSet.from_samples(
+        {x.id: 0}, vartype=dimod.BINARY, energy=0
+    )
+    monkeypatch.setattr(
+        "ommx_dwave_adapter.adapter.LeapHybridCQMSampler", Mock(return_value=sampler)
+    )
+
+    OMMXLeapHybridCQMAdapter.sample(instance, time_limit=time_limit)
+
+    assert sampler.sample_cqm.call_args.kwargs["time_limit"] == expected
+    sampler.__exit__.assert_called_once_with(None, None, None)
+
+
+def test_sampler_closes_when_resolving_fails(monkeypatch):
+    sampler = MagicMock()
+    sampler.__enter__.return_value = sampler
+    failure = RuntimeError("solver failed")
+    sampler.sample_cqm.return_value.resolve.side_effect = failure
+    monkeypatch.setattr(
+        "ommx_dwave_adapter.adapter.LeapHybridCQMSampler", Mock(return_value=sampler)
+    )
+
+    with pytest.raises(RuntimeError, match="solver failed"):
+        OMMXLeapHybridCQMAdapter.solve(Instance.minimize())
+    assert sampler.__exit__.call_args.args[:2] == (RuntimeError, failure)
+
+
+@pytest.mark.parametrize("sense", [OMMXSense.Minimize, OMMXSense.Maximize])
+def test_solve_evaluates_each_observed_row_once(monkeypatch, sense):
+    x, y = (DecisionVariable.binary(i) for i in range(2))
+    instance = Instance.from_components(
+        decision_variables=[x, y],
+        objective=x + y,
+        active_constraints={0: x + y >= 1},
+        sense=sense,
+    )
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{0: 1, 1: 1}, {0: 0, 1: 0}, {0: 1, 1: 0}, {0: 0, 1: 1}],
+        adapter.sampler_input,
+        num_occurrences=[0, 3, 2, 5],
+    )
+    expected = adapter.decode_to_sampleset(samples).best_feasible
+    monkeypatch.setattr(
+        OMMXLeapHybridCQMAdapter, "_sample_cqm", Mock(return_value=samples)
+    )
+    evaluate_samples = Instance.evaluate_samples
+    evaluated_counts = []
+
+    def record_count(instance, samples):
+        evaluated_counts.append(samples.num_samples())
+        return evaluate_samples(instance, samples)
+
+    monkeypatch.setattr(Instance, "evaluate_samples", record_count)
+    best = OMMXLeapHybridCQMAdapter.solve(instance)
+    assert evaluated_counts == [3]
+    assert best.feasible
+    assert best.state.entries == expected.state.entries
+
+
+def test_decode_preserves_occurrences():
+    instance = Instance.maximize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{x.id: 0}, {x.id: 1}], adapter.sampler_input, num_occurrences=[1, 3]
+    )
+
+    decoded = adapter.decode_to_sampleset(samples)
+    assert decoded.num_samples() == 4
+    assert decoded.objectives == {0: 0, 1: 1, 2: 1, 3: 1}
+
+
+@pytest.mark.parametrize("count", [-1, 0.9, 1.1, float("nan"), float("inf")])
+def test_decode_rejects_invalid_occurrence_count(count):
+    instance = Instance.minimize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{x.id: 0}, {x.id: 1}], adapter.sampler_input, num_occurrences=[1, count]
+    )
+    with pytest.raises(OMMXDWaveAdapterError, match="num_occurrences.*row 1"):
+        adapter.decode_to_sampleset(samples)
+    with pytest.raises(OMMXDWaveAdapterError, match="num_occurrences.*row 1"):
+        adapter.decode(samples)
+
+
+def test_decode_accepts_integer_valued_counts_and_zero():
+    instance = Instance.minimize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    adapter = OMMXLeapHybridCQMAdapter(instance)
+    samples = dimod.SampleSet.from_samples_cqm(
+        [{x.id: 0}, {x.id: 1}], adapter.sampler_input, num_occurrences=[0.0, 2.0]
+    )
+    assert adapter.decode_to_sampleset(samples).objectives == {0: 1, 1: 1}
+
+
+def test_decode_with_caller_supplied_copy(monkeypatch):
+    instance = Instance.maximize()
+    x = instance.new_binary("x")
+    instance.objective = x
+    supplied = copy.copy(instance)
+    adapter = OMMXLeapHybridCQMAdapter(supplied)
+    samples = dimod.ExactCQMSolver().sample_cqm(adapter.sampler_input)
+
+    instance.objective = 1 - x
+    instance.add_constraint(x == 0)
+
+    evaluate_samples = Instance.evaluate_samples
+
+    def evaluate_supplied(model, samples):
+        assert model is supplied
+        return evaluate_samples(model, samples)
+
+    monkeypatch.setattr(Instance, "evaluate_samples", evaluate_supplied)
+    best = adapter.decode(samples)
+    assert best.state.entries == {x.id: 1}
+    assert best.objective == 1
+    assert best.feasible
+
+
 def test_decode_no_constraints():
     x = [
         DecisionVariable.integer(id=i, name="x", subscripts=[i], lower=1, upper=10)
@@ -401,7 +560,7 @@ def test_decode_no_constraints():
     instance = Instance.from_components(
         decision_variables=x,
         objective=sum(x[i] for i in range(3)),
-        constraints={},
+        active_constraints={},
         sense=Instance.MINIMIZE,
     )
     adapter = OMMXLeapHybridCQMAdapter(instance)
@@ -427,13 +586,13 @@ def test_partial_evaluate():
     instance = Instance.from_components(
         decision_variables=x,
         objective=x[0] + x[1] + x[2],
-        constraints={0: x[0] + x[1] + x[2] <= 1},
+        active_constraints={0: x[0] + x[1] + x[2] <= 1},
         sense=Instance.MINIMIZE,
     )
-    assert instance.used_decision_variables == x
+    assert instance.active_decision_variables == x
     partial = instance.partial_evaluate({0: 1})
     # x[0] is no longer present in the problem
-    assert partial.used_decision_variables == x[1:]
+    assert partial.active_decision_variables == x[1:]
 
     adapter = OMMXLeapHybridCQMAdapter(partial)
     cqm = adapter.sampler_input
@@ -442,7 +601,7 @@ def test_partial_evaluate():
     dimod_x1 = dimod.Binary(1)
     dimod_x2 = dimod.Binary(2)
     expected.set_objective(dimod_x1 + dimod_x2 + 1)
-    expected.add_constraint(dimod_x1 + dimod_x2 <= 0, label=0)
+    expected.add_constraint(dimod_x1 + dimod_x2 <= 0, label="ConstraintID(0)")
 
     assert cqm.is_equal(expected)
 
@@ -455,7 +614,7 @@ def test_partial_evaluate():
     dimod_x0 = dimod.Binary(0)
     dimod_x2 = dimod.Binary(2)
     expected.set_objective(dimod_x0 + dimod_x2 + 1)
-    expected.add_constraint(dimod_x0 + dimod_x2 <= 0, label=0)
+    expected.add_constraint(dimod_x0 + dimod_x2 <= 0, label="ConstraintID(0)")
 
     assert cqm.is_equal(expected)
 
@@ -468,22 +627,22 @@ def test_partial_evaluate():
     dimod_x0 = dimod.Binary(0)
     dimod_x1 = dimod.Binary(1)
     expected.set_objective(dimod_x0 + dimod_x1 + 1)
-    expected.add_constraint(dimod_x0 + dimod_x1 <= 0, label=0)
+    expected.add_constraint(dimod_x0 + dimod_x1 <= 0, label="ConstraintID(0)")
 
     assert cqm.is_equal(expected)
 
 
-def test_relax_constraint():
+def test_deactivate_constraint():
     x = [DecisionVariable.binary(i, name="x", subscripts=[i]) for i in range(3)]
     instance = Instance.from_components(
         decision_variables=x,
         objective=x[0] + x[1],
-        constraints={0: x[0] + 2 * x[1] <= 1, 1: x[1] + x[2] <= 1},
+        active_constraints={0: x[0] + 2 * x[1] <= 1, 1: x[1] + x[2] <= 1},
         sense=Instance.MINIMIZE,
     )
 
-    assert instance.used_decision_variables == x
-    instance.relax_constraint(1, "relax")
+    assert instance.active_decision_variables == x
+    instance.deactivate_constraint(1, "relax")
     # id for x[2] is listed as irrelevant
     assert instance.irrelevant_decision_variable_ids() == {x[2].id}
 
@@ -495,7 +654,7 @@ def test_relax_constraint():
     dimod_x0 = dimod.Binary(0)
     dimod_x1 = dimod.Binary(1)
     expected.set_objective(dimod_x0 + dimod_x1)
-    expected.add_constraint(dimod_x0 + 2 * dimod_x1 - 1 <= 0, label=0)
+    expected.add_constraint(dimod_x0 + 2 * dimod_x1 - 1 <= 0, label="ConstraintID(0)")
 
     assert cqm.is_equal(expected)
 
@@ -505,8 +664,8 @@ def test_encode_one_hot_constraint():
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
-        constraints={},
-        one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
+        active_constraints={},
+        active_one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
         sense=Instance.MINIMIZE,
     )
 
@@ -517,7 +676,7 @@ def test_encode_one_hot_constraint():
     assert model.objective.quadratic == {}
     assert model.objective.offset == 0
 
-    label = "onehot_0"
+    label = "OneHotConstraintID(0)"
     assert label in model.constraints
     assert label in model.discrete
     assert model.constraints[label].sense == Sense.Eq
@@ -530,8 +689,8 @@ def test_encode_multiple_disjoint_one_hot_constraints():
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
-        constraints={},
-        one_hot_constraints={
+        active_constraints={},
+        active_one_hot_constraints={
             0: OneHotConstraint(variables=[x[0], x[1], x[2]]),
             1: OneHotConstraint(variables=[x[3], x[4], x[5]]),
         },
@@ -541,8 +700,8 @@ def test_encode_multiple_disjoint_one_hot_constraints():
     model = OMMXLeapHybridCQMAdapter(instance).sampler_input
 
     expected_variables = {
-        "onehot_0": {0: 1, 1: 1, 2: 1},
-        "onehot_1": {3: 1, 4: 1, 5: 1},
+        "OneHotConstraintID(0)": {0: 1, 1: 1, 2: 1},
+        "OneHotConstraintID(1)": {3: 1, 4: 1, 5: 1},
     }
     for label, variables in expected_variables.items():
         assert label in model.constraints
@@ -552,22 +711,20 @@ def test_encode_multiple_disjoint_one_hot_constraints():
         assert model.constraints[label].rhs == 1
 
 
-def test_regular_and_one_hot_constraint_labels_do_not_conflict():
+def test_regular_and_one_hot_constraint_labels():
     x = [DecisionVariable.binary(i) for i in range(3)]
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
-        constraints={0: x[0] + x[1] <= 1},
-        one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
+        active_constraints={1: x[0] + x[1] <= 1},
+        active_one_hot_constraints={0: OneHotConstraint(variables=[x[0], x[1], x[2]])},
         sense=Instance.MINIMIZE,
     )
 
     model = OMMXLeapHybridCQMAdapter(instance).sampler_input
 
-    assert 0 in model.constraints
-    assert "onehot_0" in model.constraints
-    assert 0 not in model.discrete
-    assert "onehot_0" in model.discrete
+    assert set(model.constraints) == {"ConstraintID(1)", "OneHotConstraintID(0)"}
+    assert set(model.discrete) == {"OneHotConstraintID(0)"}
 
 
 def test_overlapping_one_hot_constraint_is_encoded_without_mutating_input():
@@ -575,8 +732,8 @@ def test_overlapping_one_hot_constraint_is_encoded_without_mutating_input():
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
-        constraints={},
-        one_hot_constraints={
+        active_constraints={},
+        active_one_hot_constraints={
             0: OneHotConstraint(variables=[x[0], x[1]]),
             1: OneHotConstraint(variables=[x[1], x[2], x[3]]),
         },
@@ -587,20 +744,23 @@ def test_overlapping_one_hot_constraint_is_encoded_without_mutating_input():
     model = OMMXLeapHybridCQMAdapter(instance).sampler_input
 
     assert instance.to_v2_bytes() == before
-    assert set(instance.one_hot_constraints) == {0, 1}
-    assert instance.removed_one_hot_constraints == {}
-    assert instance.constraints == {}
+    assert set(instance.active_constraints.of_kind(ConstraintKind.OneHot)) == {
+        OneHotConstraintID(0),
+        OneHotConstraintID(1),
+    }
+    assert not instance.inactive_constraints.of_kind(ConstraintKind.OneHot)
+    assert not instance.active_constraints.of_kind(ConstraintKind.Regular)
 
-    assert set(model.discrete) == {"onehot_1"}
-    assert model.constraints["onehot_1"].lhs.linear == {1: 1, 2: 1, 3: 1}
-    assert model.constraints["onehot_1"].rhs == 1
+    assert set(model.discrete) == {"OneHotConstraintID(1)"}
+    assert model.constraints["OneHotConstraintID(1)"].lhs.linear == {1: 1, 2: 1, 3: 1}
+    assert model.constraints["OneHotConstraintID(1)"].rhs == 1
 
-    assert "onehot_0" in model.constraints
-    assert "onehot_0" not in model.discrete
-    assert model.constraints["onehot_0"].sense == Sense.Eq
-    assert model.constraints["onehot_0"].lhs.linear == {0: 1, 1: 1}
-    assert model.constraints["onehot_0"].lhs.offset == 0
-    assert model.constraints["onehot_0"].rhs == 1
+    assert "OneHotConstraintID(0)" in model.constraints
+    assert "OneHotConstraintID(0)" not in model.discrete
+    assert model.constraints["OneHotConstraintID(0)"].sense == Sense.Eq
+    assert model.constraints["OneHotConstraintID(0)"].lhs.linear == {0: 1, 1: 1}
+    assert model.constraints["OneHotConstraintID(0)"].lhs.offset == 0
+    assert model.constraints["OneHotConstraintID(0)"].rhs == 1
 
 
 def test_equal_length_overlapping_one_hot_constraints_keep_first():
@@ -608,25 +768,29 @@ def test_equal_length_overlapping_one_hot_constraints_keep_first():
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
-        constraints={},
-        one_hot_constraints={
+        active_constraints={},
+        active_one_hot_constraints={
             1: OneHotConstraint(variables=[x[1], x[2]]),
             0: OneHotConstraint(variables=[x[0], x[1]]),
         },
         sense=Instance.MINIMIZE,
     )
-    constraint_ids = list(instance.one_hot_constraints)
+    constraint_ids = list(instance.active_constraints.of_kind(ConstraintKind.OneHot))
     before = instance.to_v2_bytes()
 
     model = OMMXLeapHybridCQMAdapter(instance).sampler_input
 
     assert instance.to_v2_bytes() == before
-    assert set(instance.one_hot_constraints) == set(constraint_ids)
-    assert instance.removed_one_hot_constraints == {}
-    assert instance.constraints == {}
-    assert set(model.discrete) == {f"onehot_{constraint_ids[0]}"}
-    regularized_label = f"onehot_{constraint_ids[1]}"
-    regularized = instance.one_hot_constraints[constraint_ids[1]]
+    assert set(instance.active_constraints.of_kind(ConstraintKind.OneHot)) == set(
+        constraint_ids
+    )
+    assert not instance.inactive_constraints.of_kind(ConstraintKind.OneHot)
+    assert not instance.active_constraints.of_kind(ConstraintKind.Regular)
+    assert set(model.discrete) == {str(constraint_ids[0])}
+    regularized_label = str(constraint_ids[1])
+    regularized = instance.active_constraints.of_kind(ConstraintKind.OneHot)[
+        constraint_ids[1]
+    ]
     assert model.constraints[regularized_label].sense == Sense.Eq
     assert model.constraints[regularized_label].lhs.linear == {
         variable_id: 1 for variable_id in regularized.variables
@@ -639,8 +803,8 @@ def test_overlapping_one_hot_constraints_use_greedy_selection():
     instance = Instance.from_components(
         decision_variables=x,
         objective=0,
-        constraints={},
-        one_hot_constraints={
+        active_constraints={},
+        active_one_hot_constraints={
             0: OneHotConstraint(variables=[x[0], x[1], x[2], x[3]]),
             1: OneHotConstraint(variables=[x[0], x[4], x[5]]),
             2: OneHotConstraint(variables=[x[4], x[6]]),
@@ -652,14 +816,18 @@ def test_overlapping_one_hot_constraints_use_greedy_selection():
     model = OMMXLeapHybridCQMAdapter(instance).sampler_input
 
     assert instance.to_v2_bytes() == before
-    assert set(instance.one_hot_constraints) == {0, 1, 2}
-    assert instance.removed_one_hot_constraints == {}
-    assert instance.constraints == {}
-    assert set(model.discrete) == {"onehot_0", "onehot_2"}
+    assert set(instance.active_constraints.of_kind(ConstraintKind.OneHot)) == {
+        OneHotConstraintID(0),
+        OneHotConstraintID(1),
+        OneHotConstraintID(2),
+    }
+    assert not instance.inactive_constraints.of_kind(ConstraintKind.OneHot)
+    assert not instance.active_constraints.of_kind(ConstraintKind.Regular)
+    assert set(model.discrete) == {"OneHotConstraintID(0)", "OneHotConstraintID(2)"}
     expected_constraints = {
-        "onehot_0": {0: 1, 1: 1, 2: 1, 3: 1},
-        "onehot_1": {0: 1, 4: 1, 5: 1},
-        "onehot_2": {4: 1, 6: 1},
+        "OneHotConstraintID(0)": {0: 1, 1: 1, 2: 1, 3: 1},
+        "OneHotConstraintID(1)": {0: 1, 4: 1, 5: 1},
+        "OneHotConstraintID(2)": {4: 1, 6: 1},
     }
     for label, variables in expected_constraints.items():
         assert model.constraints[label].sense == Sense.Eq
