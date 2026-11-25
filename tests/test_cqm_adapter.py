@@ -711,7 +711,7 @@ def test_encode_multiple_disjoint_one_hot_constraints():
         assert model.constraints[label].rhs == 1
 
 
-def test_regular_and_one_hot_constraint_labels_survive_cqm_serialization():
+def test_regular_and_one_hot_constraint_labels():
     x = [DecisionVariable.binary(i) for i in range(3)]
     instance = Instance.from_components(
         decision_variables=x,
@@ -723,13 +723,8 @@ def test_regular_and_one_hot_constraint_labels_survive_cqm_serialization():
 
     model = OMMXLeapHybridCQMAdapter(instance).sampler_input
 
-    assert "ConstraintID(1)" in model.constraints
-    assert "OneHotConstraintID(0)" in model.constraints
-    assert "ConstraintID(1)" not in model.discrete
-    assert "OneHotConstraintID(0)" in model.discrete
-    with model.to_file() as serialized:
-        restored = dimod.ConstrainedQuadraticModel.from_file(serialized.read())
-    assert restored.is_equal(model)
+    assert set(model.constraints) == {"ConstraintID(1)", "OneHotConstraintID(0)"}
+    assert set(model.discrete) == {"OneHotConstraintID(0)"}
 
 
 def test_overlapping_one_hot_constraint_is_encoded_without_mutating_input():

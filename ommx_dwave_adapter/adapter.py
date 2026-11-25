@@ -196,6 +196,7 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
     def _sample_cqm(
         self, *, token: str | None, time_limit: int | None, label: str | None
     ) -> dimod.SampleSet:
+        # An omitted token lets Ocean read the credentials from the D-Wave config file.
         with LeapHybridCQMSampler(token=token) as sampler:
             if time_limit is not None:
                 time_limit = max(time_limit, sampler.properties["minimum_time_limit_s"])
@@ -368,6 +369,9 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
                 )
             if count == 0:
                 continue
+            # dimod types labels as Hashable. This adapter uses integer OMMX IDs
+            # and takes their hashes here. Large integer IDs can hash to a
+            # different value (see issue #9).
             state = {
                 var.__hash__(): float(value)
                 for var, value in zip(data.variables, values)
@@ -384,6 +388,8 @@ class OMMXLeapHybridCQMAdapter(SamplerAdapter):
             if var.kind == DecisionVariable.BINARY:
                 kind = dimod.BINARY
                 kind_name = "binary"
+                # dimod ignores bounds passed to add_variable for binary variables,
+                # but keep explicit limits here for consistency with the other kinds.
                 lower_limit = 0
                 upper_limit = 1
             elif var.kind == DecisionVariable.INTEGER:
